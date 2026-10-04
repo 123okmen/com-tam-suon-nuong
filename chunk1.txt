@@ -1,0 +1,70 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import LoginGate from '../components/LoginGate';
+import { MENU, saveOrder, syncOrder, getShift, fmtVND } from '../lib/store';
+import type { OrderLine } from '../lib/store';
+
+const API = 'https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec';
+
+export interface StaffOrder {
+  id: string;
+  time: string;
+  staff: string;
+  shift: 'sang' | 'chieu';
+  lines: OrderLine[];
+  total: number;
+  paymentMethod: 'tienmat' | 'chuyenkhoan';
+  is10k: boolean;
+  cash?: number;
+  change?: number;
+  synced: boolean;
+}
+
+export default function StaffPage() {
+  const [tab, setTab] = useState<'pos' | 'shift' | 'report' | 'recipes' | 'khaitruong'>('pos');
+  const [staff, setStaff] = useState('');
+  const [shift] = useState<'sang' | 'chieu'>(getShift());
+  const [cart, setCart] = useState<OrderLine[]>([]);
+  const [cash, setCash] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'tienmat' | 'chuyenkhoan'>('tienmat');
+  const [toast, setToast] = useState('');
+
+  const [ktCart, setKtCart] = useState<OrderLine[]>([]);
+  const [ktCash, setKtCash] = useState('');
+  const [ktPaymentMethod, setKtPaymentMethod] = useState<'tienmat' | 'chuyenkhoan'>('tienmat');
+  const [ktToast, setKtToast] = useState('');
+
+  const [shiftStatus, setShiftStatus] = useState<string>('Chưa check-in');
+  const [reportData, setReportData] = useState({ doanhThu: '', tienMat: '', tienChuyenKhoan: '', ghiChu: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [orders, setOrders] = useState<StaffOrder[]>(() => {
+    try {
+      const saved = localStorage.getItem('sammix_staff_orders_v2');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+
+  const [apiRevenue, setApiRevenue] = useState(0);
+  const [apiOrders, setApiOrders] = useState(0);
+
+  useEffect(() => {
+    localStorage.setItem('sammix_staff_orders_v2', JSON.stringify(orders));
+  }, [orders]);
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await fetch(API + '?action=data', { headers: { 'Accept': 'application/json' } });
+        const d = await r.json();
+        if (alive && d && d.kpi) {
+          setApiRevenue(d.kpi.doanhThu || 0);
+          setApiOrders(d.kpi.soDon || 0);
+        }
+      } catch { /* ignore */ }
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);

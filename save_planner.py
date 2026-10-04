@@ -1,0 +1,7 @@
+import base64
+
+b64_data = """
+aW1wb3J0IHsgZWZmZWN0LCB1c2VSZWYsIHVzZVN0YXRlLCB1c2VNZW1vIH0gZnJvbSAncmVhY3Qn
+OwppbXBvcnQgQ2hhcnQgZnJvbSAnY2hhcnQuanMvYXV0byc7CmltcG9ydCBMb2dpbkdhdGUgZnJv
+bSAnLi4vY29tcG9uZW50cy9Mb2dpbkdhdGUnOwoKY29uc3QgQVBJX1V...
+"""

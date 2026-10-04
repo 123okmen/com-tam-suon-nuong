@@ -1,0 +1,307 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import LoginGate from '../components/LoginGate';
+import { MENU, saveOrder, syncOrder, getShift, fmtVND } from '../lib/store';
+import type { Order, OrderLine } from '../lib/store';
+
+const API = 'https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec';
+
+export default function StaffPage() {
+  const [tab, setTab] = useState<'pos' | 'shift' | 'report' | 'recipes'>('pos');
+  const [staff, setStaff] = useState('');
+  const [shift] = useState<'sang' | 'chieu'>(getShift());
+  const [cart, setCart] = useState<OrderLine[]>([]);
+  const [cash, setCash] = useState('');
+  const [toast, setToast] = useState('');
+  const [shiftStatus, setShiftStatus] = useState<string>('Chưa check-in');
+  const [reportData, setReportData] = useState({ doanhThu: '', tienMat: '', ghiChu: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [apiRevenue, setApiRevenue] = useState(0);
+  const [apiOrders, setApiOrders] = useState(0);
+
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await fetch(API + '?action=data', { headers: { 'Accept': 'application/json' } });
+        const d = await r.json();
+        if (alive && d && d.kpi) {
+          setApiRevenue(d.kpi.doanhThu || 0);
+          setApiOrders(d.kpi.soDon || 0);
+        }
+      } catch { /* bo qua loi mang */ }
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  const addItem = (id: string, name: string, price: number) => {
+    setCart(prev => {
+      const found = prev.find(l => l.id === id);
+      if (found) return prev.map(l => l.id === id ? { ...l, qty: l.qty + 1 } : l);
+      return [...prev, { id, name, price, qty: 1 }];
+    });
+  };
+
+  const changeQty = (id: string, delta: number) => {
+    setCart(prev => prev.map(l => l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l).filter(l => l.qty > 0));
+  };
+
+  const total = useMemo(() => cart.reduce((s, l) => s + l.price * l.qty, 0), [cart]);
+  const cashNum = parseInt(cash.replace(/\D/g, ''), 10) || 0;
+  const change = cashNum - total;
+
+  const checkout = async () => {
+    if (!staff.trim()) { alert('Vui lòng nhập tên nhân viên bán hàng!'); return; }
+    if (cart.length === 0) { alert('Chưa có món nào trong đơn!'); return; }
+    const order: Order = {
+      id: 'DH' + Date.now().toString().slice(-8),
+      time: new Date().toISOString(),
+      staff: staff.trim(),
+      shift,
+      lines: cart,
+      total,
+      cash: cashNum || undefined,
+      change: cashNum ? change : undefined,
+      synced: false
+    };
+    const ok = await syncOrder(order);
+    order.synced = ok;
+    saveOrder(order);
+    setCart([]);
+    setCash('');
+    setToast(ok ? 'DA LUU' : 'LOI MANG - DA LUU CUC BO');
+    setTimeout(() => setToast(''), 4000);
+  };
+
+  const postJson = async (payload: any) => {
+    try {
+      await fetch(API, {
+        method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(payload)
+      });
+      return true;
+    } catch { return false; }
+  };
+
+  const handleCheckIn = async () => {
+    if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
+    setShiftStatus('Đang xử lý Check-in...');
+    const ok = await postJson({ type: 'checkin', staff: staff.trim() });
+    const time = new Date().toLocaleString('vi-VN');
+    setShiftStatus(ok ? `Đã check-in lúc: ${time}` : 'Chưa check-in (lỗi mạng)');
+    alert(ok ? `Xin chào ${staff}! Đã lưu hệ thống. Chúc bạn một ca làm việc năng suất!` : 'Lỗi mạng khi Check-in!');
+  };
+
+  const handleCheckOut = async () => {
+    if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
+    setShiftStatus('Đang xử lý Check-out...');
+    const ok = await postJson({ type: 'checkout', staff: staff.trim() });
+    const time = new Date().toLocaleString('vi-VN');
+    setShiftStatus(ok ? `Đã check-out lúc: ${time}` : 'Chưa check-out (lỗi mạng)');
+    alert(ok ? `Cảm ơn ${staff}! Đã lưu dữ liệu kết thúc ca làm việc.` : 'Lỗi mạng khi Check-out!');
+  };
+
+  const handleSubmitReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
+    setIsSubmitting(true);
+    const ok = await postJson({
+      type: 'report', staff: staff.trim(),
+      doanh_thu: reportData.doanhThu, tien_mat: reportData.tienMat, ghi_chu: reportData.ghiChu
+    });
+    alert(ok ? 'Báo cáo đã được gửi thành công cho Cổ Đông!' : 'Có lỗi xảy ra khi gửi báo cáo!');
+    if (ok) setReportData({ doanhThu: '', tienMat: '', ghiChu: '' });
+    setIsSubmitting(false);
+  };
+
+  return (
+    <LoginGate expectedPassword="sammixnv" storageKey="auth_staff" title="Khu Vực Nhân Viên">
+      <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
+        <h1 style={{ color: '#10b981', textAlign: 'center', marginBottom: '0.5rem' }}>🧑‍🍳 Web Nhân Viên</h1>
+        <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+          Chấm công · Nhập món · Báo cáo cuối ca
+        </p>
+
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          {([['pos', '🧾 Nhập Món'], ['shift', '⏱️ Chấm Công'], ['report', '📋 Báo Cáo Cuối Ca'], ['recipes', '📖 Công Thức Pha Chế']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)} className="btn-primary"
+              style={{ padding: '0.6rem 1.4rem', background: tab === k ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem 1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
+          <div style={{ flex: 1, minWidth: '220px' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Tên nhân viên *</div>
+            <input className="input-field" style={{ padding: '0.5rem 1rem' }} placeholder="VD: Minh, Lan..."
+              value={staff} onChange={e => setStaff(e.target.value)} />
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Doanh thu hôm nay</div>
+            <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#10b981' }}>{fmtVND(apiRevenue)}</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{apiOrders} đơn (từ hệ thống)</div>
+          </div>
+        </div>
+
+        {tab === 'pos' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '1.5rem' }}>
+            <div>
+              {(['sam', 'ep'] as const).map(cat => (
+                <div key={cat} className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.2rem' }}>
+                  <h2 style={{ marginTop: 0, color: cat === 'sam' ? '#d35400' : '#3498db', fontSize: '1.1rem' }}>
+                    {cat === 'sam' ? '🍵 Trà Sâm Thảo Mộc' : '🥤 Nước Ép Trái Cây Tươi'}
+                  </h2>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' }}>
+                    {MENU.filter(m => m.category === cat).map(item => (
+                      <button key={item.id} onClick={() => addItem(item.id, item.name, item.price)}
+                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '10px', cursor: 'pointer', textAlign: 'center' }}>
+                        <img src={import.meta.env.BASE_URL + item.img} alt={item.name}
+                          style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '6px', color: 'var(--text-primary)' }}>{item.name}</div>
+                        <div style={{ color: '#10b981', fontWeight: 'bold' }}>{fmtVND(item.price)}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="glass-panel" style={{ alignSelf: 'start', position: 'sticky', top: '70px' }}>
+              <h2 style={{ marginTop: 0, color: '#f39c12' }}>🛒 Đơn hàng hiện tại</h2>
+              {cart.length === 0 ? (
+                <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0' }}>
+                  Bấm vào món để thêm vào đơn
+                </p>
+              ) : (
+                <>
+                  {cart.map(l => (
+                    <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{l.name}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{fmtVND(l.price)}</div>
+                      </div>
+                      <button onClick={() => changeQty(l.id, -1)} style={qtyBtn}>−</button>
+                      <span style={{ minWidth: '28px', textAlign: 'center', fontWeight: 'bold' }}>{l.qty}</span>
+                      <button onClick={() => changeQty(l.id, 1)} style={qtyBtn}>+</button>
+                      <div style={{ minWidth: '80px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>{fmtVND(l.price * l.qty)}</div>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px dashed var(--glass-border)', margin: '12px 0', paddingTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 'bold' }}>
+                      <span>Tổng tiền</span><span style={{ color: '#10b981' }}>{fmtVND(total)}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                      <input className="input-field" style={{ padding: '0.6rem 1rem' }} placeholder="Tiền khách đưa"
+                        value={cash} onChange={e => setCash(e.target.value)} />
+                    </div>
+                    {cashNum > 0 && (
+                      <div style={{ marginTop: '8px', fontSize: '0.95rem' }}>
+                        Tiền thối: <strong style={{ color: change >= 0 ? '#3498db' : '#e74c3c' }}>
+                          {change >= 0 ? fmtVND(change) : 'Thiếu ' + fmtVND(-change)}
+                        </strong>
+                      </div>
+                    )}
+                    <button className="btn-primary" style={{ width: '100%', marginTop: '12px', background: '#1e7145', fontSize: '1.05rem' }}
+                      onClick={checkout}>
+                      💾 Xác Nhận Đơn Hàng
+                    </button>
+                  </div>
+                </>
+              )}
+              {toast && (
+                <div style={{ marginTop: '12px', padding: '10px', borderRadius: '8px', background: 'rgba(16,185,129,0.15)', border: '1px solid #10b981', fontSize: '0.9rem', textAlign: 'center' }}>
+                  {toast}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === 'shift' && (
+          <div className="glass-panel" style={{ maxWidth: '600px', margin: '0 auto' }}>
+            <h2 style={{ color: '#3498db', marginTop: 0 }}>⏱️ Chấm Công Ca Trực</h2>
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '1rem' }}>
+              <button onClick={handleCheckIn} className="btn-primary" style={{ flex: 1, background: '#27ae60' }}>Đầu Ca (Check-in)</button>
+              <button onClick={handleCheckOut} className="btn-primary" style={{ flex: 1, background: '#e74c3c' }}>Cuối Ca (Check-out)</button>
+            </div>
+            <div style={{ padding: '10px', background: 'rgba(255,255,255,0.1)', borderRadius: '8px', border: '1px dashed #7f8c8d' }}>
+              Trạng thái: <strong>{shiftStatus}</strong>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '1rem' }}>
+              💡 Nhập tên nhân viên ở ô phía trên trước khi bấm Check-in / Check-out.
+            </p>
+          </div>
+        )}
+
+        {tab === 'report' && (
+          <div className="glass-panel" style={{ maxWidth: '600px', margin: '0 auto' }}>
+            <h2 style={{ color: '#f39c12', marginTop: 0 }}>📋 Báo Cáo Cuối Ca</h2>
+            <form onSubmit={handleSubmitReport} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <input type="text" placeholder="Doanh thu ước tính (VD: 1.500.000đ)..." className="input-field"
+                value={reportData.doanhThu} onChange={e => setReportData({ ...reportData, doanhThu: e.target.value })} required />
+              <input type="text" placeholder="Tiền mặt còn lại trong quầy..." className="input-field"
+                value={reportData.tienMat} onChange={e => setReportData({ ...reportData, tienMat: e.target.value })} required />
+              <textarea placeholder="Ghi chú thêm (thiếu ly nhựa, hao hụt trái cây,...)" className="input-field" rows={3}
+                value={reportData.ghiChu} onChange={e => setReportData({ ...reportData, ghiChu: e.target.value })} />
+              <button type="submit" className="btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? 'Đang gửi...' : 'Gửi Báo Cáo'}
+              </button>
+            </form>
+          </div>
+        )}
+        {tab === 'recipes' && (
+          <div className="glass-panel">
+            <h2 style={{ color: '#27ae60', borderBottom: '2px solid #2ecc71', paddingBottom: '0.5rem', margin: '2rem 0 1rem' }}>
+              🥤 Công Thức Pha Chế — Nước Ép Trái Cây Tươi
+            </h2>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.85)', color: '#333' }}>
+              <thead>
+                <tr style={{ background: '#1e7145', color: 'white' }}>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Tên Món</th>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Công thức ép chuẩn (Ly 500ml)</th>
+                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Lưu ý kích vị</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>Cam Sành</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>150ml cốt cam (2-3 quả) + 30ml nước đường mật mía + Đá</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thêm 1 xíu muối tinh để vị đậm đà</td>
+                </tr>
+                <tr style={{ background: '#f9f9f9' }}>
+                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>Cà Rốt</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt cà rốt (2-3 củ) + 20ml nước đường mật mía + Đá</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thêm 10ml nước cốt chanh để không bị ngái</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>Dứa Mật</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt dứa (1/2 quả lớn) + 20ml nước đường mật mía + Đá</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thêm 5ml cốt tắc để tăng độ thơm</td>
+                </tr>
+                <tr style={{ background: '#f9f9f9' }}>
+                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>Cóc Non</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt cóc (3-4 quả) + 35ml nước đường mật mía + Đá</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Bắt buộc có muối tinh liều lượng nhỏ xíu</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>Cần Tây Mix Táo</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>150ml cốt cần tây + 50ml cốt táo + 10ml nước đường mật mía + Đá</td>
+                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Ép cùng 1 lát gừng mỏng để khử mùi hăng</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </LoginGate>
+  );
+}
+
+const qtyBtn: React.CSSProperties = {
+  width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--glass-border)',
+  background: 'rgba(255,255,255,0.1)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem'
+};

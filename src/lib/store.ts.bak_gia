@@ -1,0 +1,106 @@
+// ============================================================
+// Kho dữ liệu POS quán Sâm Mix - lưu local + đồng bộ Google Sheets
+// ============================================================
+
+export interface MenuItem {
+  id: string;
+  name: string;
+  price: number;
+  category: 'sam' | 'ep';
+  img: string;
+}
+
+export const MENU: MenuItem[] = [
+  { id: 'sam-mia-lau',     name: 'Sâm Mía Lau',          price: 15000, category: 'sam', img: 'sam_mia_lau_v2.jpg' },
+  { id: 'sam-bong-cuc',    name: 'Sâm Bông Cúc',         price: 20000, category: 'sam', img: 'sam_bong_cuc_v2.jpg' },
+  { id: 'sam-tao-do',      name: 'Sâm Táo Đỏ Long Nhãn', price: 25000, category: 'sam', img: 'sam_cu_nang_v2.jpg' },
+  { id: 'sam-rong-bien',   name: 'Sâm Rong Biển Hạt Chia', price: 25000, category: 'sam', img: 'sam_mix_topping_1784433169722.png' },
+  { id: 'ep-cam',          name: 'Cam Sành Miền Tây',    price: 25000, category: 'ep',  img: 'cam.jpg' },
+  { id: 'ep-ca-rot',       name: 'Cà Rốt Đà Lạt',        price: 20000, category: 'ep',  img: 'carot.jpg' },
+  { id: 'ep-dua',          name: 'Dứa Mật',              price: 20000, category: 'ep',  img: 'dua.jpeg' },
+  { id: 'ep-coc',          name: 'Cóc Non',               price: 20000, category: 'ep',  img: 'coc.jpeg' },
+  { id: 'ep-can-tay',      name: 'Cần Tây Mix Táo',      price: 30000, category: 'ep',  img: 'cantay.JPG' },
+];
+
+export interface OrderLine {
+  id: string;
+  name: string;
+  price: number;
+  qty: number;
+}
+
+export interface Order {
+  id: string;
+  time: string;
+  staff: string;
+  shift: 'sang' | 'chieu';
+  lines: OrderLine[];
+  total: number;
+  cash?: number;
+  change?: number;
+  synced: boolean;
+}
+
+// URL Google Apps Script (đồng bộ check-in/check-out/báo cáo/đơn hàng)
+export const APP_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec";
+
+const ORDERS_KEY = 'sammix_orders_v1';
+
+export function getOrders(): Order[] {
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY);
+    return raw ? JSON.parse(raw) as Order[] : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveOrder(order: Order) {
+  const orders = getOrders();
+  orders.push(order);
+  localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+}
+
+export async function syncOrder(order: Order): Promise<boolean> {
+  try {
+    await fetch(APP_SCRIPT_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        type: 'order',
+        orderId: order.id,
+        staff: order.staff,
+        shift: order.shift,
+        items: order.lines.map(l => l.name + 'x' + l.qty).join(', '),
+        detail: JSON.stringify(order.lines.map(l => ({ name: l.name, qty: l.qty, price: l.price }))),
+        total: order.total,
+        cash: order.cash || '',
+        change: order.change || '',
+        time: order.time
+      })
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getShift(): 'sang' | 'chieu' {
+  const h = new Date().getHours();
+  return (h >= 6 && h < 11) ? 'sang' : 'chieu';
+}
+
+export function shiftLabel(s: string): string {
+  return s === 'sang' ? 'Sáng (6h-11h)' : 'Chiều tối (16h-21h)';
+}
+
+export function fmtVND(n: number): string {
+  return n.toLocaleString('vi-VN') + 'đ';
+}
+
+export function fmtTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+}

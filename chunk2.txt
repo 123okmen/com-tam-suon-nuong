@@ -1,0 +1,77 @@
+  const addItem = (id: string, name: string, price: number) => {
+    setCart(prev => {
+      const found = prev.find(l => l.id === id);
+      if (found) return prev.map(l => l.id === id ? { ...l, qty: l.qty + 1 } : l);
+      return [...prev, { id, name, price, qty: 1 }];
+    });
+  };
+
+  const changeQty = (id: string, delta: number) => {
+    setCart(prev => prev.map(l => l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l).filter(l => l.qty > 0));
+  };
+
+  const addKtItem = (id: string, name: string) => {
+    setKtCart(prev => {
+      const found = prev.find(l => l.id === id);
+      if (found) return prev.map(l => l.id === id ? { ...l, qty: l.qty + 1 } : l);
+      return [...prev, { id, name, price: 10000, qty: 1 }];
+    });
+  };
+
+  const changeKtQty = (id: string, delta: number) => {
+    setKtCart(prev => prev.map(l => l.id === id ? { ...l, qty: Math.max(0, l.qty + delta) } : l).filter(l => l.qty > 0));
+  };
+
+  const total = useMemo(() => cart.reduce((s, l) => s + l.price * l.qty, 0), [cart]);
+  const cashNum = parseInt(cash.replace(/\D/g, ''), 10) || 0;
+  const change = cashNum - total;
+
+  const ktTotal = useMemo(() => ktCart.reduce((x, l) => x + l.price * l.qty, 0), [ktCart]);
+  const ktCashNum = parseInt(ktCash.replace(/\D/g, ''), 10) || 0;
+  const ktChange = ktCashNum - ktTotal;
+
+  const checkout = async () => {
+    if (!staff.trim()) { alert('Vui lòng nhập tên nhân viên bán hàng!'); return; }
+    if (cart.length === 0) { alert('Chưa có món nào trong đơn!'); return; }
+    const nowTime = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+
+    if (editingOrderId) {
+      setOrders(orders.map(o => o.id === editingOrderId ? {
+        ...o, staff: staff.trim(), lines: cart, total, paymentMethod,
+        cash: paymentMethod === 'tienmat' ? cashNum || undefined : undefined,
+        change: paymentMethod === 'tienmat' && cashNum ? change : undefined
+      } : o));
+      setEditingOrderId(null);
+      setCart([]);
+      setCash('');
+      setToast('ĐÃ CẬP NHẬT ĐƠN HÀNG');
+      setTimeout(() => setToast(''), 4000);
+      return;
+    }
+
+    const newOrder: StaffOrder = {
+      id: 'DH' + Date.now().toString().slice(-8),
+      time: nowTime,
+      staff: staff.trim(),
+      shift,
+      lines: cart,
+      total,
+      paymentMethod,
+      is10k: false,
+      cash: paymentMethod === 'tienmat' ? cashNum || undefined : undefined,
+      change: paymentMethod === 'tienmat' && cashNum ? change : undefined,
+      synced: false
+    };
+    const ok = await syncOrder({
+      id: newOrder.id, time: new Date().toISOString(), staff: newOrder.staff,
+      shift: newOrder.shift, lines: newOrder.lines, total: newOrder.total,
+      cash: newOrder.cash, change: newOrder.change, synced: false, paymentMethod: newOrder.paymentMethod
+    });
+    newOrder.synced = ok;
+    setOrders([newOrder, ...orders]);
+    saveOrder(newOrder);
+    setCart([]);
+    setCash('');
+    setToast(ok ? 'ĐÃ LƯU ĐƠN HÀNG' : 'LỖI MẠNG - ĐÃ LƯU CỤC BỘ');
+    setTimeout(() => setToast(''), 4000);
+  };

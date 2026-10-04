@@ -1,0 +1,116 @@
+import React, { useState, useEffect, useMemo } from "react";
+import LoginGate from "../components/LoginGate";
+import { MENU, saveOrder, syncOrder, getShift, fmtVND } from "../lib/store";
+import { parseOrderTime } from "../lib/googleSheets";
+
+interface CartLine { id: string; name: string; price: number; qty: number; }
+interface KTItem { id: string; name: string; price: number; qty: number; }
+
+const KT_MENU = [
+  { id: "kt_sam_330", name: "Trà sâm 330ml", price: 10000 },
+  { id: "kt_sam_500", name: "Trà sâm 500ml", price: 10000 },
+  { id: "kt_ep_330", name: "Nước ép 330ml", price: 10000 },
+  { id: "kt_ep_500", name: "Nước ép 500ml", price: 10000 },
+];
+
+export default function StaffPage() {
+  const [tab, setTab] = useState<"pos" | "khaitruong" | "shift" | "report" | "recipes">("pos");
+  const [staff, setStaff] = useState("");
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cash, setCash] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"tienmat" | "chuyenkhoan">("tienmat");
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+
+  const [ktCart, setKtCart] = useState<KTItem[]>([]);
+  const [ktPaymentMethod, setKtPaymentMethod] = useState<"tienmat" | "chuyenkhoan">("tienmat");
+
+  const [recentOrders, setRecentOrders] = useState<any[]>([]);
+
+  const [shiftType, setShiftType] = useState<"ca1" | "ca2">("ca1");
+  const [shiftAction, setShiftAction] = useState<"vào ca" | "ra ca">("vào ca");
+
+  const [reportData, setReportData] = useState({
+    nhanVien: "", ca: "ca1", tienDauCa: "", tienMatPos: "", tienChuyenKhoan: "", tongChuyenKhoanApp: "", ghiChu: ""
+  });
+
+  const [apiRevenue, setApiRevenue] = useState(0);
+  const [apiOrders, setApiOrders] = useState(0);
+  const [toast, setToast] = useState("");
+
+  const loadRecentOrders = () => {
+    try {
+      const saved = localStorage.getItem("sam_mix_orders");
+      if (saved) setRecentOrders(JSON.parse(saved));
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    loadRecentOrders();
+    fetch("https://script.google.com/macros/s/AKfycbz_S2H9mXW2dCmsWJ4e3P3eJ3gNq3vJ3d3m3/exec?action=getOrders")
+      .then(res => res.json())
+      .then(d => {
+        if (d && d.orders) {
+          const today = new Date().toLocaleDateString("vi-VN");
+          const todayOrders = d.orders.filter((o: any) => o.date === today);
+          setApiRevenue(todayOrders.reduce((sum: number, o: any) => sum + (Number(o.total) || 0), 0));
+          setApiOrders(todayOrders.length);
+        }
+      }).catch(() => {});
+  }, []);
+
+  const total = cart.reduce((sum, i) => sum + i.price * i.qty, 0);
+  const cashNum = Number(cash) || 0;
+  const change = cashNum - total;
+
+  const addItem = (id: string, name: string, price: number) => {
+    setCart(prev => {
+      const found = prev.find(l => l.id === id);
+      if (found) return prev.map(l => l.id === id ? { ...l, qty: l.qty + 1 } : l);
+      return [...prev, { id, name, price, qty: 1 }];
+    });
+  };
+
+  const changeQty = (id: string, delta: number) => {
+    setCart(prev => prev.map(l => l.id === id ? { ...l, qty: l.qty + delta } : l).filter(l => l.qty > 0));
+  };
+
+  const checkout = async () => {
+    if (!staff.trim()) { alert("Vui lòng nhập tên nhân viên bán hàng!"); return; }
+    if (cart.length === 0) return;
+
+    const orderData = {
+      id: editingOrderId || ("POS-" + Date.now().toString().slice(-6)),
+      items: cart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty })),
+      total,
+      paymentMethod,
+      staff: staff.trim(),
+      timestamp: new Date().toISOString(),
+      date: new Date().toLocaleDateString("vi-VN"),
+      time: new Date().toLocaleTimeString("vi-VN"),
+      isKhaitruong: false
+    };
+
+    saveOrder(orderData);
+    try { await syncOrder(orderData); } catch (e) {}
+    loadRecentOrders();
+
+    setToast(editingOrderId ? "✅ Đã cập nhật đơn hàng!" : "✅ Đã thanh toán & lưu đơn!");
+    setTimeout(() => setToast(""), 3000);
+    setCart([]); setCash(""); setEditingOrderId(null);
+  };
+
+  const editOrder = (order: any) => {
+    setEditingOrderId(order.id);
+    if (order.items && Array.isArray(order.items)) {
+      setCart(order.items.map((i: any) => ({ id: i.id, name: i.name, price: i.price, qty: i.qty })));
+    }
+    if (order.paymentMethod) setPaymentMethod(order.paymentMethod);
+    if (order.isKhaitruong && order.items) {
+      setKtCart(order.items.map((i: any) => ({ id: i.id, name: i.name, price: i.price, qty: i.qty })));
+      setKtPaymentMethod(order.paymentMethod || "tienmat");
+      setTab("khaitruong");
+    } else {
+      setTab("pos");
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };

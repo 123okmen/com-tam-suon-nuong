@@ -1,0 +1,68 @@
+  const addKtItem = (id: string, name: string, price: number) => {
+    setKtCart(prev => {
+      const found = prev.find(l => l.id === id);
+      if (found) return prev.map(l => l.id === id ? { ...l, qty: l.qty + 1 } : l);
+      return [...prev, { id, name, price, qty: 1 }];
+    });
+  };
+
+  const changeKtQty = (id: string, delta: number) => {
+    setKtCart(prev => prev.map(l => l.id === id ? { ...l, qty: l.qty + delta } : l).filter(l => l.qty > 0));
+  };
+
+  const ktTotal = ktCart.reduce((sum, i) => sum + i.price * i.qty, 0);
+
+  const ktCheckout = async () => {
+    if (!staff.trim()) { alert("Vui lòng nhập tên nhân viên bán hàng!"); return; }
+    if (ktCart.length === 0) { alert("Chưa chọn món khai trương nào!"); return; }
+
+    const orderData = {
+      id: editingOrderId || ("KT-" + Date.now().toString().slice(-6)),
+      items: ktCart.map(c => ({ id: c.id, name: c.name, price: c.price, qty: c.qty })),
+      total: ktTotal,
+      paymentMethod: ktPaymentMethod,
+      staff: staff.trim(),
+      timestamp: new Date().toISOString(),
+      date: new Date().toLocaleDateString("vi-VN"),
+      time: new Date().toLocaleTimeString("vi-VN"),
+      isKhaitruong: true
+    };
+
+    saveOrder(orderData);
+    try { await syncOrder(orderData); } catch (e) {}
+    loadRecentOrders();
+
+    setToast(editingOrderId ? "✅ Đã cập nhật đơn 10K!" : "✅ Đã lưu đơn Khai Trương 10K!");
+    setTimeout(() => setToast(""), 3000);
+    setKtCart([]); setEditingOrderId(null);
+  };
+
+  const handleShift = async () => {
+    if (!staff.trim()) { alert("Vui lòng nhập tên nhân viên!"); return; }
+    const data = { type: shiftType, action: shiftAction, staff: staff.trim(), timestamp: new Date().toISOString() };
+    try {
+      await fetch("https://script.google.com/macros/s/AKfycbz_S2H9mXW2dCmsWJ4e3P3eJ3gNq3vJ3d3m3/exec", {
+        method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "shift", ...data })
+      });
+      setToast("✅ Đã ghi nhận " + shiftAction + " " + shiftType + "!");
+    } catch (e) { setToast("❌ Lỗi kết nối!"); }
+    setTimeout(() => setToast(""), 3000);
+  };
+
+  const handleReport = async () => {
+    if (!staff.trim()) { alert("Vui lòng nhập tên nhân viên!"); return; }
+    try {
+      await fetch("https://script.google.com/macros/s/AKfycbz_S2H9mXW2dCmsWJ4e3P3eJ3gNq3vJ3d3m3/exec", {
+        method: "POST", mode: "no-cors", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "report", ...reportData, nhanVien: staff.trim() })
+      });
+      setToast("✅ Đã gửi báo cáo cuối ca thành công!");
+    } catch (e) { setToast("❌ Lỗi gửi báo cáo!"); }
+    setTimeout(() => setToast(""), 3000);
+  };
+
+  const qtyBtn: React.CSSProperties = {
+    width: "28px", height: "28px", borderRadius: "50%", border: "1px solid var(--glass-border)",
+    background: "rgba(255,255,255,0.1)", color: "#fff", cursor: "pointer", fontWeight: "bold"
+  };

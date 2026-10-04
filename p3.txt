@@ -1,0 +1,128 @@
+
+  const ktCheckout = async () => {
+    if (!staff.trim()) { alert("Vui lòng nhập tên nhân viên bán hàng!"); return; }
+    if (ktCart.length === 0) { alert("Chưa có món nào trong đơn!"); return; }
+    const nowTime = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+
+    if (editingOrderId) {
+      setOrders(orders.map(o => o.id === editingOrderId ? {
+        ...o, staff: staff.trim(), lines: ktCart, total: ktTotal, paymentMethod: ktPaymentMethod,
+        cash: ktPaymentMethod === "tienmat" ? ktCashNum || undefined : undefined,
+        change: ktPaymentMethod === "tienmat" && ktCashNum ? ktChange : undefined
+      } : o));
+      setEditingOrderId(null);
+      setKtCart([]);
+      setKtCash("");
+      setKtToast("ĐÃ CẬP NHẬT ĐƠN 10K");
+      setTimeout(() => setKtToast(""), 4000);
+      return;
+    }
+
+    const newOrder: StaffOrder = {
+      id: "KT" + Date.now().toString().slice(-8),
+      time: nowTime,
+      staff: staff.trim(),
+      shift,
+      lines: ktCart,
+      total: ktTotal,
+      paymentMethod: ktPaymentMethod,
+      is10k: true,
+      cash: ktPaymentMethod === "tienmat" ? ktCashNum || undefined : undefined,
+      change: ktPaymentMethod === "tienmat" && ktCashNum ? ktChange : undefined,
+      synced: false
+    };
+    const ok = await syncOrder({
+      id: newOrder.id, time: new Date().toISOString(), staff: newOrder.staff,
+      shift: newOrder.shift, lines: newOrder.lines, total: newOrder.total,
+      cash: newOrder.cash, change: newOrder.change, synced: false, paymentMethod: newOrder.paymentMethod
+    });
+    newOrder.synced = ok;
+    setOrders([newOrder, ...orders]);
+    saveOrder(newOrder);
+    setKtCart([]);
+    setKtCash("");
+    setKtToast(ok ? "ĐÃ LƯU ĐƠN 10K" : "LỖI MẠNG - ĐÃ LƯU CỤC BỘ");
+    setTimeout(() => setKtToast(""), 4000);
+  };
+
+  const handleEditOrder = (o: StaffOrder) => {
+    setEditingOrderId(o.id);
+    if (o.is10k) {
+      setTab("khaitruong");
+      setKtCart(o.lines);
+      setKtPaymentMethod(o.paymentMethod || "tienmat");
+      setKtCash(o.cash ? o.cash.toString() : "");
+    } else {
+      setTab("pos");
+      setCart(o.lines);
+      setPaymentMethod(o.paymentMethod || "tienmat");
+      setCash(o.cash ? o.cash.toString() : "");
+    }
+    window.scrollTo({ top: 200, behavior: "smooth" });
+  };
+
+  const handleDeleteOrder = (orderId: string) => {
+    if (confirm("Bạn có chắc muốn xóa đơn hàng #" + orderId + "?")) {
+      setOrders(orders.filter(o => o.id !== orderId));
+      if (editingOrderId === orderId) {
+        setEditingOrderId(null);
+        setCart([]);
+        setKtCart([]);
+      }
+    }
+  };
+
+  const autoTotalRevenue = useMemo(() => orders.reduce((s, o) => s + o.total, 0), [orders]);
+  const autoTotalCash = useMemo(() => orders.filter(o => o.paymentMethod === "tienmat" || !o.paymentMethod).reduce((s, o) => s + o.total, 0), [orders]);
+  const autoTotalTransfer = useMemo(() => orders.filter(o => o.paymentMethod === "chuyenkhoan").reduce((s, o) => s + o.total, 0), [orders]);
+
+  const fillReportFromOrders = () => {
+    const totalItems = orders.reduce((acc, o) => acc + o.lines.reduce((lAcc, l) => lAcc + l.qty, 0), 0);
+    setReportData({
+      doanhThu: fmtVND(autoTotalRevenue),
+      tienMat: fmtVND(autoTotalCash),
+      tienChuyenKhoan: fmtVND(autoTotalTransfer),
+      ghiChu: "Tổng " + orders.length + " đơn hàng (" + totalItems + " ly món)."
+    });
+  };
+
+  const postJson = async (payload: any) => {
+    try {
+      await fetch(API, {
+        method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload)
+      });
+      return true;
+    } catch { return false; }
+  };
+
+  const handleCheckIn = async () => {
+    if (!staff.trim()) return alert("Vui lòng nhập tên nhân viên!");
+    setShiftStatus("Đang xử lý Check-in...");
+    const ok = await postJson({ type: "checkin", staff: staff.trim() });
+    const time = new Date().toLocaleString("vi-VN");
+    setShiftStatus(ok ? "Đã check-in lúc: " + time : "Chưa check-in (lỗi mạng)");
+    alert(ok ? "Xin chào " + staff + "! Đã lưu hệ thống. Chúc bạn một ca làm việc năng suất!" : "Lỗi mạng khi Check-in!");
+  };
+
+  const handleCheckOut = async () => {
+    if (!staff.trim()) return alert("Vui lòng nhập tên nhân viên!");
+    setShiftStatus("Đang xử lý Check-out...");
+    const ok = await postJson({ type: "checkout", staff: staff.trim() });
+    const time = new Date().toLocaleString("vi-VN");
+    setShiftStatus(ok ? "Đã check-out lúc: " + time : "Chưa check-out (lỗi mạng)");
+    alert(ok ? "Cảm ơn " + staff + "! Đã lưu dữ liệu kết thúc ca làm việc." : "Lỗi mạng khi Check-out!");
+  };
+
+  const handleSubmitReport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staff.trim()) return alert("Vui lòng nhập tên nhân viên!");
+    setIsSubmitting(true);
+    const ok = await postJson({
+      type: "report", staff: staff.trim(),
+      doanh_thu: reportData.doanhThu, tien_mat: reportData.tienMat, tien_chuyen_khoan: reportData.tienChuyenKhoan, ghi_chu: reportData.ghiChu
+    });
+    alert(ok ? "Báo cáo đã được gửi thành công cho Cổ Đông!" : "Có lỗi xảy ra khi gửi báo cáo!");
+    if (ok) setReportData({ doanhThu: "", tienMat: "", tienChuyenKhoan: "", ghiChu: "" });
+    setIsSubmitting(false);
+  };
