@@ -1,16 +1,14 @@
 import { useState, useEffect } from 'react';
 import TableOrderPage from './pages/TableOrderPage';
-import PosPage from './pages/PosPage';
 import StaffPage from './pages/StaffPage';
 import PlannerPage from './pages/PlannerPage';
 import './App.css';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'order' | 'pos' | 'staff' | 'planner'>(() => {
+  const [activeTab, setActiveTab] = useState<'order' | 'staff' | 'planner'>(() => {
     const hash = window.location.hash.toLowerCase();
     if (hash.includes('planner')) return 'planner';
-    if (hash.includes('staff') || hash.includes('recipes')) return 'staff';
-    if (hash.includes('pos')) return 'pos';
+    if (hash.includes('staff') || hash.includes('recipes') || hash.includes('pos')) return 'staff';
     return 'order';
   });
 
@@ -18,8 +16,7 @@ export default function App() {
     const handleHashChange = () => {
       const hash = window.location.hash.toLowerCase();
       if (hash.includes('planner')) setActiveTab('planner');
-      else if (hash.includes('staff') || hash.includes('recipes')) setActiveTab('staff');
-      else if (hash.includes('pos')) setActiveTab('pos');
+      else if (hash.includes('staff') || hash.includes('recipes') || hash.includes('pos')) setActiveTab('staff');
       else setActiveTab('order');
     };
 
@@ -27,7 +24,7 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
-  const changeTab = (tab: 'order' | 'pos' | 'staff' | 'planner') => {
+  const changeTab = (tab: 'order' | 'staff' | 'planner') => {
     setActiveTab(tab);
     window.location.hash = '#/' + tab;
   };
@@ -59,22 +56,6 @@ export default function App() {
               }}
             >
               🍽️ Gọi Món Tại Bàn
-            </button>
-            <button 
-              className={activeTab === 'pos' ? 'nav-tab active' : 'nav-tab'}
-              onClick={() => changeTab('pos')}
-              style={{
-                padding: '0.5rem 0.85rem',
-                borderRadius: '8px',
-                border: activeTab === 'pos' ? '2px solid #f59e0b' : '1px solid #334155',
-                background: activeTab === 'pos' ? '#f59e0b' : 'rgba(30, 41, 59, 0.8)',
-                color: activeTab === 'pos' ? '#0f172a' : '#cbd5e1',
-                fontWeight: '800',
-                cursor: 'pointer',
-                fontSize: '0.85rem'
-              }}
-            >
-              💻 Bán Hàng (POS)
             </button>
             <button 
               className={activeTab === 'staff' ? 'nav-tab active' : 'nav-tab'}
@@ -114,7 +95,6 @@ export default function App() {
 
       <main className="app-main">
         {activeTab === 'order' && <TableOrderPage />}
-        {activeTab === 'pos' && <PosPage />}
         {activeTab === 'staff' && <StaffPage />}
         {activeTab === 'planner' && <PlannerPage />}
       </main>
