@@ -63,7 +63,7 @@ export default function PosPage() {
   const todayRevenue = todayOrders.reduce((s, o) => s + o.total, 0);
 
   return (
-    <LoginGate expectedPassword="sammixnv" storageKey="auth_pos" title="Khu Vực Bán Hàng">
+    <LoginGate expectedPassword="khoinghiep123" storageKey="auth_pos" title="Khu Vực Bán Hàng">
       <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
         <h1 style={{ color: '#10b981', textAlign: 'center', marginBottom: '0.5rem' }}>🧾 Nhập Món và Bán Hàng</h1>
         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>

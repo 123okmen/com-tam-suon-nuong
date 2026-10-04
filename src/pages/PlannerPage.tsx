@@ -312,7 +312,7 @@ export default function PlannerPage() {
   };
 
   return (
-    <LoginGate expectedPassword="sammixgymer" storageKey="auth_planner" title="Khu Vực Quản Lý Cổ Đông">
+    <LoginGate expectedPassword="khoinghiep123" storageKey="auth_planner" title="Khu Vực Quản Lý Cổ Đông">
       <div style={{ padding: '1.5rem', maxWidth: '1200px', margin: '0 auto', fontFamily: 'sans-serif', color: '#fff' }}>
         
         {/* Header */}
