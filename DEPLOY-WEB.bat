@@ -1,9 +1,9 @@
 @echo off
 chcp 65001 >nul
-title DEPLOY SAM MIX WEB TO GITHUB PAGES
+title DEPLOY COM TAM SUON NUONG WEB TO GITHUB PAGES
 color 0A
 echo ============================================================
-echo 🚀 DANG BUILD VA DAY WEB SAM MIX MOI NHAT LEN GITHUB PAGES...
+echo 🚀 DANG BUILD VA DAY WEB COM TAM SUON NUONG LEN GITHUB PAGES...
 echo ============================================================
 echo.
 
@@ -13,16 +13,21 @@ cd /d "%~dp0"
 
 echo [1/2] Bien dich ma nguon moi nhat...
 call node build_dist.cjs
+if errorlevel 1 (
+  echo ❌ Build loi! Khong the deploy.
+  pause
+  exit /b 1
+)
 
 echo.
 echo [2/2] Day trang web moi len GitHub Pages (gh-pages)...
-call npx gh-pages -d dist
+call npx.cmd gh-pages -d dist
 
 echo.
 echo ============================================================
 echo ✅ DA PUBLISH WEBSITE MOI NHAT 100%% THANH CONG!
 echo 🌐 Link web GitHub Live: 
-echo    https://123okmen.github.io/sam-mix-planner/#/planner
+echo    https://123okmen.github.io/com-tam-suon-nuong/#/order
 echo ============================================================
 echo.
 pause

@@ -1,17 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
 
 import LoginGate from '../components/LoginGate';
-import { MENU, saveOrder, deleteOrder, syncOrder, syncDeleteOrder, getShift, fmtVND } from '../lib/store';
-import type { Order, OrderLine } from '../lib/store';
+import MenuItemCard from '../components/MenuItemCard';
+import { MENU, CATEGORIES, STORE_SCHEDULE, getOrders, saveOrder, deleteOrder, syncOrder, syncDeleteOrder, getShift, shiftLabel, newOrderId, localDateKey, fmtVND } from '../lib/store';
+import type { Order, OrderLine, Shift } from '../lib/store';
 
 const API = 'https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec';
 
 export default function StaffPage() {
   
-  const [tab, setTab] = useState<'pos' | 'shift' | 'off' | 'report' | 'recipes'>('pos');
-  const [offData, setOffData] = useState({ date: new Date().toISOString().slice(0,10), shift: 'sang', reason: '' });
+  const [tab, setTab] = useState<'pos' | 'shift' | 'schedule' | 'off' | 'report' | 'recipes'>('pos');
+  const [offData, setOffData] = useState({ date: localDateKey(), shift: 'sang', reason: '' });
   const [staff, setStaff] = useState('');
-  const [shift, setShift] = useState<'sang' | 'trua' | 'toi' | 'gay' | 'chieu'>(getShift());
+  const [shift, setShift] = useState<Shift>(getShift());
   const [cart, setCart] = useState<OrderLine[]>([]);
   const [cash, setCash] = useState('');
   const [toast, setToast] = useState('');
@@ -27,7 +28,6 @@ export default function StaffPage() {
   const [apiRevenue, setApiRevenue] = useState(0);
   const [apiOrders, setApiOrders] = useState(0);
 
-
   const fetchSystemData = async () => {
     try {
       const r = await fetch(API + '?action=data', { headers: { 'Accept': 'application/json' } });
@@ -40,11 +40,8 @@ export default function StaffPage() {
   };
 
   useEffect(() => {
-    // Load local orders for shift calculation
-    try {
-      const stored = localStorage.getItem('sammix_orders_v1');
-      if (stored) setRecentOrders(JSON.parse(stored));
-    } catch {}
+    // Load local orders for shift calculation using shared store
+    setRecentOrders(getOrders());
 
     fetchSystemData();
     const t = setInterval(fetchSystemData, 15000);
@@ -79,15 +76,17 @@ export default function StaffPage() {
   };
 
   const total = useMemo(() => cart.reduce((s, l) => s + l.price * l.qty, 0), [cart]);
+  const qtyById = useMemo(() => Object.fromEntries(cart.map(l => [l.id, l.qty])), [cart]);
   const cashNum = parseInt(cash.replace(/\D/g, ''), 10) || 0;
   const change = cashNum - total;
 
   const checkout = async () => {
     if (!staff.trim()) { alert('Vui lòng nhập tên nhân viên bán hàng!'); return; }
     if (cart.length === 0) { alert('Chưa có món nào trong đơn!'); return; }
+    const orderId = editingOrderId || newOrderId();
     const order: Order = {
       paymentMethod,
-      id: 'DH' + Date.now().toString().slice(-8),
+      id: orderId,
       time: new Date().toISOString(),
       staff: staff.trim(),
       shift,
@@ -103,9 +102,9 @@ export default function StaffPage() {
     setCart([]);
     setCash('');
     setToast(ok ? (editingOrderId ? 'ĐÃ CẬP NHẬT ĐƠN!' : 'ĐÃ LƯU ĐƠN!') : 'LỖI MẠNG - ĐÃ LƯU CỤC BỘ');
+    setRecentOrders(getOrders());
+    setEditingOrderId(null);
     if (ok) {
-      setRecentOrders(prev => [order, ...prev.filter(o => o.id !== order.id)]);
-      setEditingOrderId(null);
       setTimeout(fetchSystemData, 1500);
     }
     setTimeout(() => setToast(''), 4000);
@@ -114,7 +113,7 @@ export default function StaffPage() {
   const handleDeleteOrder = async (orderId: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa đơn ' + orderId + ' trên giao diện và Google Sheets không?')) {
       deleteOrder(orderId);
-      setRecentOrders(prev => prev.filter(o => o.id !== orderId));
+      setRecentOrders(getOrders());
       if (editingOrderId === orderId) {
         setEditingOrderId(null);
         setCart([]);
@@ -151,7 +150,7 @@ export default function StaffPage() {
   const handleCheckIn = async () => {
     if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
     setShiftStatus('Đang xử lý Check-in...');
-    const shiftText = shift === 'sang' ? 'Ca Sáng (7h30-12h30)' : 'Ca Chiều Tối (13h-21h)';
+    const shiftText = shiftLabel(shift);
     const ok = await postJson({ type: 'checkin', staff: staff.trim(), shift: shiftText });
     const time = new Date().toLocaleString('vi-VN');
     setShiftStatus(ok ? `Đã check-in ${shiftText} lúc: ${time}` : 'Chưa check-in (lỗi mạng)');
@@ -161,7 +160,7 @@ export default function StaffPage() {
   const handleCheckOut = async () => {
     if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
     setShiftStatus('Đang xử lý Check-out...');
-    const shiftText = shift === 'sang' ? 'Ca Sáng (7h30-12h30)' : 'Ca Chiều Tối (13h-21h)';
+    const shiftText = shiftLabel(shift);
     const ok = await postJson({ type: 'checkout', staff: staff.trim(), shift: shiftText });
     const time = new Date().toLocaleString('vi-VN');
     setShiftStatus(ok ? `Đã check-out ${shiftText} lúc: ${time}` : 'Chưa check-out (lỗi mạng)');
@@ -170,9 +169,9 @@ export default function StaffPage() {
 
   // Tính toán doanh thu & tiền mặt & chuyển khoản TRONG CA CỦA NHÂN VIÊN
   const shiftMetrics = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localDateKey();
     const shiftOrders = recentOrders.filter(o => {
-      const isToday = o.time && o.time.slice(0, 10) === todayStr;
+      const isToday = o.time && localDateKey(new Date(o.time)) === todayStr;
       const matchStaff = !staff.trim() || o.staff.toLowerCase() === staff.trim().toLowerCase();
       const matchShift = o.shift === shift;
       return isToday && matchShift && matchStaff;
@@ -186,7 +185,7 @@ export default function StaffPage() {
       rev += (o.total || 0);
       if (o.paymentMethod === 'chuyenkhoan') {
         ck += (o.total || 0);
-      } else {
+      } else if (o.paymentMethod === 'tienmat') {
         tm += (o.total || 0);
       }
     });
@@ -260,10 +259,17 @@ export default function StaffPage() {
           Chấm công · Nhập món · Báo cáo cuối ca
         </p>
 
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-          {([['pos', '🧾 Nhập Món'], ['shift', '⏱️ Chấm Công'], ['off', '🏖️ Báo Cáo Off Ca'], ['report', '📋 Báo Cáo Cuối Ca'], ['recipes', '📖 Công Thức Pha Chế']] as const).map(([k, label]) => (
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+          {([
+            ['pos', '🧾 Nhập Món'],
+            ['shift', '⏱️ Chấm Công'],
+            ['schedule', '⏰ Khung Giờ & Phối Hợp'],
+            ['report', '📋 Báo Cáo Cuối Ca'],
+            ['recipes', '📖 Công Thức Bếp'],
+            ['off', '🏖️ Nghỉ Ca']
+          ] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} className="btn-primary"
-              style={{ padding: '0.6rem 1.4rem', background: tab === k ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
+              style={{ padding: '0.6rem 1.1rem', fontSize: '0.88rem', background: tab === k ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
               {label}
             </button>
           ))}
@@ -276,12 +282,13 @@ export default function StaffPage() {
             <input className="input-field" style={{ padding: '0.5rem 1rem' }} placeholder="VD: Minh, Lan..."
               value={staff} onChange={e => setStaff(e.target.value)} />
           </div>
-          <div style={{ minWidth: '200px' }}>
+          <div style={{ minWidth: '220px' }}>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Ca làm việc *</div>
             <select className="input-field" style={{ padding: '0.5rem 1rem', background: 'rgba(255,255,255,0.1)', color: '#fff' }}
-              value={shift} onChange={e => setShift(e.target.value as 'sang' | 'gay' | 'chieu')}>
-              <option value="sang" style={{ background: '#222' }}>🌅 Ca Sáng (7h30 - 12h30)</option>
-              <option value="chieu" style={{ background: '#222' }}>🌆 Ca Chiều Tối (13h00 - 21h00)</option>
+              value={shift} onChange={e => setShift(e.target.value as Shift)}>
+              <option value="sang" style={{ background: '#222' }}>🌅 Ca Sáng (06h30 - 10h00)</option>
+              <option value="trua" style={{ background: '#222' }}>☀️ Ca Trưa (10h00 - 14h00)</option>
+              <option value="chieu-toi" style={{ background: '#222' }}>🌆 Ca Chiều - Tối (16h00 - 21h00)</option>
             </select>
           </div>
           <div style={{ textAlign: 'right' }}>
@@ -306,7 +313,7 @@ export default function StaffPage() {
                   Chế độ Khai Trương Đồng Giá 10K {isPromo10k ? ' (ĐANG BẬT 🔥)' : ''}
                 </div>
                 <div style={{ fontSize: '0.8rem', color: isPromo10k ? '#ffeaa7' : 'var(--text-secondary)' }}>
-                  {isPromo10k ? 'Tất cả các món khi chọn sẽ áp dụng giá ưu đãi 10.000đ / ly' : 'Gạt công tắc để áp dụng giá 10k cho tất cả các món'}
+                  {isPromo10k ? 'Tất cả các món khi chọn sẽ áp dụng giá ưu đãi 10.000đ / phần' : 'Gạt công tắc để áp dụng giá 10k cho tất cả các món'}
                 </div>
               </div>
             </div>
@@ -326,35 +333,43 @@ export default function StaffPage() {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '1.5rem' }}>
+          <div className="order-layout">
             <div>
-              {(['sam', 'coffee', 'ep', 'food', 'app'] as const).map(cat => (
-                <div key={cat} className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.2rem' }}>
-                  <h2 style={{ marginTop: 0, color: cat === 'sam' ? '#d35400' : cat === 'coffee' ? '#6f4e37' : cat === 'ep' ? '#3498db' : '#e67e22', fontSize: '1.1rem' }}>
-                    {cat === 'sam' ? '🍵 Trà Sâm Thảo Mộc' : cat === 'coffee' ? '☕ Cà Phê Phin' : cat === 'ep' ? '🥤 Nước Ép Trái Cây Tươi' : cat === 'food' ? '🍢 Đồ Ăn Vặt & Nem Nướng' : '🛵 Đơn App Online (ShopeeFood / Grab)'}
+              {CATEGORIES.map(cat => (
+                <div key={cat.id} className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.2rem' }}>
+                  <h2 style={{ marginTop: 0, color: cat.color, fontSize: '1.1rem' }}>
+                    {cat.emoji} {cat.label}
                   </h2>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' }}>
-                    {MENU.filter(m => m.category === cat).map(item => (
-                      <button key={item.id} onClick={() => addItem(item.id, item.name, item.price)}
-                        style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '10px', cursor: 'pointer', textAlign: 'center' }}>
-                        <img src={import.meta.env.BASE_URL + item.img} alt={item.name}
-                          style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '6px', color: 'var(--text-primary)' }}>{item.name}</div>
-                        <div style={{ color: isPromo10k ? '#e74c3c' : '#10b981', fontWeight: 'bold' }}>
-                          {isPromo10k ? (
-                            <span><s style={{ fontSize: '0.75rem', opacity: 0.7, marginRight: '4px', color: '#95a5a6' }}>{fmtVND(item.price)}</s>10.000đ</span>
-                          ) : (
-                            fmtVND(item.price)
-                          )}
-                        </div>
-                      </button>
+                  <div className="menu-grid">
+                    {MENU.filter(m => m.category === cat.id).map(item => (
+                      <MenuItemCard
+                        key={item.id}
+                        item={item}
+                        onAdd={(it) => addItem(it.id, it.name, it.price)}
+                        overridePrice={isPromo10k ? 10000 : undefined}
+                        qtyInCart={qtyById[isPromo10k ? item.id + '_10k' : item.id] || 0}
+                      />
                     ))}
                   </div>
                 </div>
               ))}
+
+              <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.2rem' }}>
+                <h2 style={{ marginTop: 0, color: '#3498db', fontSize: '1.1rem' }}>
+                  🛵 Đơn App Online (ShopeeFood / Grab)
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => addItem('app-online', 'Đơn App Online', 0)}
+                  className="btn-primary"
+                  style={{ background: '#3498db', width: '100%', padding: '0.8rem', fontSize: '0.95rem' }}
+                >
+                  ➕ Nhập Số Tiền Thu Về Đơn App
+                </button>
+              </div>
             </div>
 
-            <div className="glass-panel" style={{ alignSelf: 'start', position: 'sticky', top: '70px' }}>
+            <div className="glass-panel order-layout__cart">
               <h2 style={{ marginTop: 0, color: '#f39c12' }}>🛒 Đơn hàng hiện tại</h2>
               {cart.length === 0 ? (
                 <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0' }}>
@@ -368,9 +383,9 @@ export default function StaffPage() {
                         <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{l.name}</div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{fmtVND(l.price)}</div>
                       </div>
-                      <button onClick={() => changeQty(l.id, -1)} style={qtyBtn}>−</button>
+                      <button className="qty-btn" onClick={() => changeQty(l.id, -1)}>−</button>
                       <span style={{ minWidth: '28px', textAlign: 'center', fontWeight: 'bold' }}>{l.qty}</span>
-                      <button onClick={() => changeQty(l.id, 1)} style={qtyBtn}>+</button>
+                      <button className="qty-btn" onClick={() => changeQty(l.id, 1)}>+</button>
                       <div style={{ minWidth: '80px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>{fmtVND(l.price * l.qty)}</div>
                     </div>
                   ))}
@@ -485,8 +500,9 @@ export default function StaffPage() {
                 <label style={{ fontSize: "0.85rem", display: "block", marginBottom: "6px" }}>Ca xin nghỉ *</label>
                 <select className="input-field" style={{ width: "100%", padding: "0.6rem 1rem", background: "rgba(255,255,255,0.1)", color: "#fff" }}
                   value={offData.shift} onChange={e => setOffData({ ...offData, shift: e.target.value })}>
-                  <option value="sang" style={{ background: "#222" }}>🌅 Ca Sáng (7h30 - 12h30)</option>
-                  <option value="chieu" style={{ background: "#222" }}>🌆 Ca Chiều Tối (13h - 21h)</option>
+                  <option value="sang" style={{ background: "#222" }}>🌅 Ca Sáng (06h30 - 10h00)</option>
+                  <option value="trua" style={{ background: "#222" }}>☀️ Ca Trưa (10h00 - 14h00)</option>
+                  <option value="chieu-toi" style={{ background: "#222" }}>🌆 Ca Chiều - Tối (16h00 - 21h00)</option>
                 </select>
               </div>
               <div>
@@ -514,8 +530,81 @@ export default function StaffPage() {
               Trạng thái: <strong>{shiftStatus}</strong>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '1rem' }}>
-              💡 Nhập tên nhân viên ở ô phía trên trước khi bấm Check-in / Check-out.
+              💡 Nhập tên nhân viên và chọn đúng ca ở ô phía trên trước khi bấm Check-in / Check-out.
             </p>
+          </div>
+        )}
+
+        {tab === 'schedule' && (
+          <div className="glass-panel" style={{ maxWidth: '900px', margin: '0 auto' }}>
+            <h2 style={{ color: '#f59e0b', marginTop: 0, borderBottom: '2px solid #f59e0b', paddingBottom: '0.5rem' }}>
+              ⏰ Khung Giờ Vận Hành & Phối Hợp Bán Hàng
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.2rem' }}>
+              Chi tiết các khung giờ hoạt động, cao điểm bán hàng và nhiệm vụ phối hợp giữa các mảng tại quán.
+            </p>
+
+            <div style={{ display: 'grid', gap: '12px', marginBottom: '1.5rem' }}>
+              {STORE_SCHEDULE.map(s => {
+                const isHighlight = s.id === shift;
+                return (
+                  <div key={s.id} style={{
+                    padding: '1rem',
+                    borderRadius: '12px',
+                    border: isHighlight ? '2px solid #10b981' : '1px solid var(--glass-border)',
+                    background: isHighlight ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.05)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '6px'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{
+                          background: s.id === 'prep' ? '#e67e22' : s.id === 'break' ? '#475569' : s.id === 'close' ? '#dc2626' : '#1e7145',
+                          padding: '3px 10px', borderRadius: '6px', fontSize: '0.85rem', fontWeight: 'bold'
+                        }}>
+                          {s.time}
+                        </span>
+                        <strong style={{ fontSize: '1.05rem', color: isHighlight ? '#10b981' : '#fff' }}>
+                          {s.name}
+                        </strong>
+                      </div>
+                      {isHighlight && (
+                        <span style={{ fontSize: '0.8rem', background: '#10b981', color: '#0f172a', fontWeight: 'bold', padding: '2px 8px', borderRadius: '12px' }}>
+                          👉 CA BẠN ĐANG CHỌN
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ color: '#cbd5e1', fontSize: '0.92rem', paddingLeft: '4px', lineHeight: '1.5' }}>
+                      {s.tasks}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Checklist nhắc việc đầu ca & cuối ca */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+              <div style={{ background: 'rgba(230, 126, 34, 0.12)', border: '1px solid #e67e22', borderRadius: '12px', padding: '1rem' }}>
+                <h3 style={{ margin: '0 0 8px 0', color: '#e67e22', fontSize: '1rem' }}>🔥 06h00: Chuẩn Bị Đầu Ca</h3>
+                <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.88rem', color: '#cbd5e1', lineHeight: '1.6' }}>
+                  <li>Nhóm than bếp nướng, giữ tàn đỏ êm</li>
+                  <li>Vo gạo cắm cơm tấm mẻ đầu tiên</li>
+                  <li>Ướp thịt cốt lết, chuẩn bị bì chả & rau đồ chua</li>
+                  <li>Bật đun nước mắm kẹo và phi mỡ hành</li>
+                </ul>
+              </div>
+
+              <div style={{ background: 'rgba(239, 68, 68, 0.12)', border: '1px solid #ef4444', borderRadius: '12px', padding: '1rem' }}>
+                <h3 style={{ margin: '0 0 8px 0', color: '#ef4444', fontSize: '1rem' }}>🔒 21h00 - 21h30: Đóng Cửa & Chốt Ca</h3>
+                <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.88rem', color: '#cbd5e1', lineHeight: '1.6' }}>
+                  <li>Vệ sinh vỉ nướng, cạo sạch muội than</li>
+                  <li>Dập tắt than ủ an toàn, khóa van bình gas</li>
+                  <li>Dọn dẹp rác, lau bàn ghế, quét sàn sạch sẽ</li>
+                  <li>Kiểm kê tiền két và bấm Báo Cáo Cuối Ca</li>
+                </ul>
+              </div>
+            </div>
           </div>
         )}
 
@@ -531,7 +620,7 @@ export default function StaffPage() {
 
             <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px', marginBottom: '1rem', border: '1px solid var(--glass-border)' }}>
               <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#f1c40f', marginBottom: '8px' }}>
-                📊 Thống kê TRONG CA HIỆN TẠI (Ca {shift === 'sang' ? 'Sáng (7h30-12h30)' : 'Chiều Tối (13h-21h)'}):
+                📊 Thống kê TRONG CA HIỆN TẠI ({shiftLabel(shift)}):
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '10px', textAlign: 'center' }}>
                 <div style={{ background: 'rgba(255,255,255,0.05)', padding: '8px', borderRadius: '8px' }}>
@@ -569,58 +658,55 @@ export default function StaffPage() {
         )}
         {tab === 'recipes' && (
           <div className="glass-panel">
-            <h2 style={{ color: '#27ae60', borderBottom: '2px solid #2ecc71', paddingBottom: '0.5rem', margin: '2rem 0 1rem' }}>
-              🥤 Công Thức Pha Chế — Nước Ép Trái Cây Tươi
+            <h2 style={{ color: '#f59e0b', borderBottom: '2px solid #f59e0b', paddingBottom: '0.5rem', margin: '1rem 0' }}>
+              📖 Công Thức Chuẩn Bị Bếp — Cơm Tấm Sườn & Cơm Chiên
             </h2>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.85)', color: '#333' }}>
-              <thead>
-                <tr style={{ background: '#1e7145', color: 'white' }}>
-                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Tên Món</th>
-                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Công thức ép chuẩn (Ly 500ml)</th>
-                  <th style={{ padding: '10px', border: '1px solid #ddd' }}>Lưu ý kích vị</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>1. Dưa Hấu</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt dưa hấu (khoảng 1/4 quả) + 20ml nước đường mật mía + đá</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Ép nguyên ruột, lọc bớt hạt cho ly trong</td>
-                </tr>
-                <tr style={{ background: '#f9f9f9' }}>
-                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>2. Cam Sành</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>150ml cốt cam (2-3 quả) + 30ml nước đường mật mía + đá</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thêm 1 xíu muối tinh để vị đậm đà</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>3. Cà Rốt</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt cà rốt (2-3 củ) + 20ml nước đường mật mía + đá</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thêm 10ml nước cốt chanh để không bị ngái</td>
-                </tr>
-                <tr style={{ background: '#f9f9f9' }}>
-                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>4. Dứa Mật</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt dứa (1/2 quả lớn) + 20ml nước đường mật mía + đá</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thêm 5ml cốt tắc để tăng độ thơm</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>5. Cóc Non</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml cốt cóc (3-4 quả) + 35ml nước đường mật mía + đá</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Bắt buộc có muối tinh liều lượng nhỏ</td>
-                </tr>
-                <tr style={{ background: '#f9f9f9' }}>
-                  <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#27ae60' }}>6. Ép Trái Cây Mix</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>200ml hỗn hợp nước ép trái cây mix tươi + 15ml nước đường mật mía + đá</td>
-                  <td style={{ padding: '10px', border: '1px solid #ddd' }}>Ép cùng 1 lát gừng mỏng để khử mùi hăng</td>
-                </tr>
-              </tbody>
-            </table>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.92)', color: '#1e293b', borderRadius: '8px', overflow: 'hidden' }}>
+                <thead>
+                  <tr style={{ background: '#7c2d12', color: 'white' }}>
+                    <th style={{ padding: '10px', border: '1px solid #ddd' }}>Hạng mục</th>
+                    <th style={{ padding: '10px', border: '1px solid #ddd' }}>Định lượng chuẩn</th>
+                    <th style={{ padding: '10px', border: '1px solid #ddd' }}>Lưu ý kỹ thuật chế biến</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>1. Ướp Sườn Cốt Lết (10kg)</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Sả băm 400g, tỏi 200g, hành tím 200g, mật ong 150ml, sữa đặc 150g, nước mắm ngon 250ml, dầu hào 150ml, dầu điều 100ml, tiêu</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Dần mềm thớ thịt trước khi ướp ít nhất 4 tiếng. Nướng than hoa lửa vừa, quết dầu màu điều giữ sườn bóng mềm, không bị khô.</td>
+                  </tr>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>2. Chả Trứng Hấp (Khay 20 phần)</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thịt nạc vai xay 1kg, mộc nhĩ 80g, miến dong 80g, 10 quả trứng vịt (bớt 3 lòng đỏ), hành tím, hạt nêm, tiêu</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Hấp cách thủy 25 phút. Quét 3 lòng đỏ đánh đều với dầu màu điều lên mặt, mở nắp hấp thêm 5-7 phút cho mặt vàng đẹp.</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>3. Nước Mắm Kẹo Ăn Cơm Tấm</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>1 bát nước mắm ngon : 1 bát đường cát vàng : 1 bát nước dừa xiêm tươi, đun sôi lăn tăn cô lại, để nguội thêm tỏi ớt băm</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Nước mắm có độ sánh sệt, vị ngọt mặn hài hòa đặc trưng miền Nam. Tỏi ớt nổi đều lên mặt.</td>
+                  </tr>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>4. Mỡ Hành & Tóp Mỡ</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Hành lá cắt nhỏ + 1 xíu muối, đường. Dầu ăn thật sôi hoặc mỡ heo nóng già dội trực tiếp vào bát hành</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Không đun hành trên bếp tránh úa vàng. Tóp mỡ thắng giòn rụm để riêng, khi chan cơm mới rắc lên giữ độ giòn.</td>
+                  </tr>
+                  <tr>
+                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>5. Đồ Chua Ăn Kèm</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Củ cải trắng và cà rốt bào sợi, bóp muối rửa sạch vắt ráo. Ngâm tỷ lệ 1 giấm : 1 đường : 2 nước</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Làm trước nửa ngày để ngấm giòn chua ngọt, khử mùi nồng của củ cải.</td>
+                  </tr>
+                  <tr style={{ background: '#f8fafc' }}>
+                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>6. Cơm Chiên Dưa Bò & Cơm Chiên</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Cơm nấu hơi khô để nguội trộn lòng đỏ trứng. Bắp bò thái mỏng ướp tỏi gừng xào dưa chua lửa lớn vừa chín tới</td>
+                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Chiên cơm trên chảo gang thật nóng cho hạt săn tơi giòn ngoài mềm trong. Trút dưa bò xào đảo nhanh tay, rắc hành ngò tiêu.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
     </LoginGate>
   );
 }
-
-const qtyBtn: React.CSSProperties = {
-  width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--glass-border)',
-  background: 'rgba(255,255,255,0.1)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem'
-};

@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import LoginGate from '../components/LoginGate';
-import { MENU, getOrders, saveOrder, syncOrder, getShift, shiftLabel, fmtVND, fmtTime } from '../lib/store';
-import type { Order, OrderLine } from '../lib/store';
+import MenuItemCard from '../components/MenuItemCard';
+import { MENU, CATEGORIES, getOrders, saveOrder, syncOrder, getShift, shiftLabel, newOrderId, localDateKey, fmtVND, fmtTime } from '../lib/store';
+import type { Order, OrderLine, Shift } from '../lib/store';
 
 export default function PosPage() {
   const [staff, setStaff] = useState('');
-  const [shift, setShift] = useState<'sang' | 'trua' | 'toi' | 'gay' | 'chieu'>(getShift());
+  const [shift, setShift] = useState<Shift>(getShift());
   const [cart, setCart] = useState<OrderLine[]>([]);
   const [cash, setCash] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
@@ -13,7 +14,7 @@ export default function PosPage() {
 
   useEffect(() => { setOrders(getOrders()); }, []);
 
-  const addItem = (id: string, name: string, price: number) => {
+  const addItem = ({ id, name, price }: { id: string; name: string; price: number }) => {
     setCart(prev => {
       const found = prev.find(l => l.id === id);
       if (found) return prev.map(l => l.id === id ? { ...l, qty: l.qty + 1 } : l);
@@ -26,6 +27,7 @@ export default function PosPage() {
   };
 
   const total = useMemo(() => cart.reduce((s, l) => s + l.price * l.qty, 0), [cart]);
+  const qtyById = useMemo(() => Object.fromEntries(cart.map(l => [l.id, l.qty])), [cart]);
   const cashNum = parseInt(cash.replace(/\D/g, ''), 10) || 0;
   const change = cashNum - total;
 
@@ -33,7 +35,7 @@ export default function PosPage() {
     if (!staff.trim()) { alert('Vui lòng nhập tên nhân viên bán hàng!'); return; }
     if (cart.length === 0) { alert('Chưa có món nào trong đơn!'); return; }
     const order: Order = {
-      id: 'DH' + Date.now().toString().slice(-8),
+      id: newOrderId(),
       time: new Date().toISOString(),
       staff: staff.trim(),
       shift,
@@ -49,13 +51,13 @@ export default function PosPage() {
     setOrders(getOrders());
     setCart([]);
     setCash('');
-    setToast(ok ? 'DA LUU' : 'LOI MANG - DA LUU CUC BO');
+    setToast(ok ? '✅ ĐÃ LƯU ĐƠN!' : '⚠️ LỖI MẠNG - ĐÃ LƯU CỤC BỘ');
     setTimeout(() => setToast(''), 4000);
   };
 
   const todayOrders = useMemo(() => {
-    const today = new Date().toDateString();
-    return orders.filter(o => new Date(o.time).toDateString() === today);
+    const today = localDateKey();
+    return orders.filter(o => localDateKey(new Date(o.time)) === today);
   }, [orders]);
 
   const todayRevenue = todayOrders.reduce((s, o) => s + o.total, 0);
@@ -71,14 +73,18 @@ export default function PosPage() {
         <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem 1.5rem', display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Ca làm việc</div>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
-              <button onClick={() => setShift('sang')} className="btn-primary"
-                style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', background: shift === 'sang' ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
-                🌅 Ca Sáng (7h30-12h30)
+            <div style={{ display: 'flex', gap: '6px', marginTop: '4px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setShift('sang')} className="btn-primary"
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', background: shift === 'sang' ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
+                🌅 Ca Sáng (06h30-10h)
               </button>
-              <button onClick={() => setShift('chieu')} className="btn-primary"
-                style={{ padding: '0.4rem 1rem', fontSize: '0.85rem', background: shift === 'chieu' ? '#d35400' : 'rgba(255,255,255,0.1)' }}>
-                🌆 Ca Chiều Tối (13h-21h)
+              <button type="button" onClick={() => setShift('trua')} className="btn-primary"
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', background: shift === 'trua' ? '#b45309' : 'rgba(255,255,255,0.1)' }}>
+                ☀️ Ca Trưa (10h-14h)
+              </button>
+              <button type="button" onClick={() => setShift('chieu-toi')} className="btn-primary"
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.82rem', background: shift === 'chieu-toi' ? '#d35400' : 'rgba(255,255,255,0.1)' }}>
+                🌆 Ca Chiều - Tối (16h-21h)
               </button>
             </div>
           </div>
@@ -94,29 +100,23 @@ export default function PosPage() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '1.5rem' }}>
+        <div className="order-layout">
           <div>
-            {(['sam', 'ep', 'food'] as const).map(cat => (
-              <div key={cat} className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.2rem' }}>
-                <h2 style={{ marginTop: 0, color: cat === 'sam' ? '#d35400' : '#3498db', fontSize: '1.1rem' }}>
-                  {cat === 'sam' ? '🍵 Trà Sâm Thảo Mộc' : cat === 'ep' ? '🥤 Nước Ép Trái Cây Tươi' : '🍢 Đồ Ăn Vặt & Nem Nướng'}
+            {CATEGORIES.map(cat => (
+              <div key={cat.id} className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1.2rem' }}>
+                <h2 style={{ marginTop: 0, color: cat.color, fontSize: '1.1rem' }}>
+                  {cat.emoji} {cat.label}
                 </h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px' }}>
-                  {MENU.filter(m => m.category === cat).map(item => (
-                    <button key={item.id} onClick={() => addItem(item.id, item.name, item.price)}
-                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '10px', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-                      <img src={import.meta.env.BASE_URL + item.img} alt={item.name}
-                        style={{ width: '100%', height: '80px', objectFit: 'cover', borderRadius: '8px' }} />
-                      <div style={{ fontSize: '0.85rem', fontWeight: 600, marginTop: '6px', color: 'var(--text-primary)' }}>{item.name}</div>
-                      <div style={{ color: '#10b981', fontWeight: 'bold' }}>{fmtVND(item.price)}</div>
-                    </button>
+                <div className="menu-grid">
+                  {MENU.filter(m => m.category === cat.id).map(item => (
+                    <MenuItemCard key={item.id} item={item} onAdd={addItem} qtyInCart={qtyById[item.id] || 0} />
                   ))}
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="glass-panel" style={{ alignSelf: 'start', position: 'sticky', top: '70px' }}>
+          <div className="glass-panel order-layout__cart">
             <h2 style={{ marginTop: 0, color: '#f39c12' }}>🛒 Đơn hàng hiện tại</h2>
             {cart.length === 0 ? (
               <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0' }}>
@@ -130,9 +130,9 @@ export default function PosPage() {
                       <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{l.name}</div>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{fmtVND(l.price)}</div>
                     </div>
-                    <button onClick={() => changeQty(l.id, -1)} style={qtyBtn}>−</button>
+                    <button className="qty-btn" onClick={() => changeQty(l.id, -1)}>−</button>
                     <span style={{ minWidth: '28px', textAlign: 'center', fontWeight: 'bold' }}>{l.qty}</span>
-                    <button onClick={() => changeQty(l.id, 1)} style={qtyBtn}>+</button>
+                    <button className="qty-btn" onClick={() => changeQty(l.id, 1)}>+</button>
                     <div style={{ minWidth: '80px', textAlign: 'right', fontWeight: 'bold', color: '#10b981' }}>{fmtVND(l.price * l.qty)}</div>
                   </div>
                 ))}
@@ -141,7 +141,7 @@ export default function PosPage() {
                     <span>Tổng tiền</span><span style={{ color: '#10b981' }}>{fmtVND(total)}</span>
                   </div>
                   <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                    <input className="input-field" style={{ padding: '0.6rem 1rem' }} placeholder="Tiền khách đưa"
+                    <input className="input-field" style={{ padding: '0.6rem 1rem' }} placeholder="Tiền khách đưa" inputMode="numeric"
                       value={cash} onChange={e => setCash(e.target.value)} />
                   </div>
                   {cashNum > 0 && (
@@ -171,7 +171,8 @@ export default function PosPage() {
           {todayOrders.length === 0 ? (
             <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1rem 0' }}>Chưa có đơn nào</p>
           ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+            <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
               <thead>
                 <tr style={{ color: '#94a3b8', borderBottom: '1px solid var(--glass-border)' }}>
                   <th style={{ padding: '8px' }}>Mã đơn</th>
@@ -184,7 +185,7 @@ export default function PosPage() {
                 </tr>
               </thead>
               <tbody>
-                {todayOrders.slice().reverse().map(o => (
+                {todayOrders.map(o => (
                   <tr key={o.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <td style={{ padding: '8px', fontWeight: 'bold' }}>{o.id}</td>
                     <td style={{ padding: '8px' }}>{fmtTime(o.time)}</td>
@@ -197,14 +198,10 @@ export default function PosPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       </div>
     </LoginGate>
   );
 }
-
-const qtyBtn: React.CSSProperties = {
-  width: '30px', height: '30px', borderRadius: '8px', border: '1px solid var(--glass-border)',
-  background: 'rgba(255,255,255,0.1)', color: 'var(--text-primary)', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem'
-};

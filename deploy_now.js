@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-console.log('=== SAM MIX PLANNER AUTO DEPLOYER ===');
+console.log('=== COM TAM SUON NUONG AUTO DEPLOYER ===');
 
 function runCmd(cmd) {
   console.log(`> Running: ${cmd}`);
@@ -19,11 +19,12 @@ function runCmd(cmd) {
 
 try {
   runCmd('git add .');
-  try { runCmd('git commit -m "Auto deploy PlannerPage with Payroll Calculator"'); } catch {}
+  try { runCmd('git commit -m "Deploy Com Tam Suon Nuong web app"'); } catch {}
   runCmd('git push origin master');
-  runCmd('npm run build');
-  runCmd('npx gh-pages -d dist');
+  runCmd('npm.cmd run build');
+  runCmd('npx.cmd gh-pages -d dist');
   console.log('\n✅ DEPLOYED TO GITHUB PAGES SUCCESSFULLY!');
+  console.log('🌐 Link web: https://123okmen.github.io/com-tam-suon-nuong/#/order');
 } catch (e) {
   console.error('\n❌ DEPLOYMENT FAILED:', e.message);
 }
