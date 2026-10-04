@@ -5,12 +5,11 @@ import {
   localDateKey,
   fmtVND,
   ORDERS_CHANGED_EVENT,
-  parseOrderDate
+  parseOrderDate,
+  getScriptUrl
 } from '../lib/store';
 import type { Order, Shift } from '../lib/store';
 import './PlannerPage.css';
-
-const API_DATA_URL = 'https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec?action=data';
 
 interface DailyStat {
   dateKey: string; // YYYY-MM-DD
@@ -45,7 +44,7 @@ export default function PlannerPage() {
     setIsRefreshing(true);
     setOrders(getOrders());
     try {
-      const res = await fetch(API_DATA_URL, { headers: { Accept: 'application/json' } });
+      const res = await fetch(getScriptUrl() + '?action=data', { headers: { Accept: 'application/json' } });
       const d = await res.json();
       if (d && d.ok) {
         setApiData(d);

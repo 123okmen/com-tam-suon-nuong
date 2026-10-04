@@ -1,64 +1,567 @@
 // ============================================================
-// SAM MIX PLANNER - Apps Script OPTIMIZED (08/2026)
-// 3 tab: Cham cong | Don hang | Bao cao doanh thu
-// Real-time Telegram qua @Alicewordbot
+// TRẠM KHỞI NGHIỆP – CƠM TẤM SƯỜN NƯỚNG & CƠM CHIÊN
+// Google Apps Script kết nối Web App: Đơn Hàng | Chấm Công | Báo Cáo Cuối Ca | Off Ca | Tổng Hợp KPI
+// Hỗ trợ đồng bộ Real-time 2 chiều & Thông báo Telegram
 // ============================================================
 
+var STORE_NAME = 'TRẠM KHỞI NGHIỆP – Cơm Tấm Sườn Nướng';
+var TG_BOT_TOKEN = '8755799868:AAHKmMYP9TAm3fAFiGO0zLDYIpcddV90oFc';
+var TG_CHAT_ID = '7220726428';
+
+// ================= TỰ ĐỘNG TẠO MENU KHI MỞ TRANG TÍNH =================
+function onOpen() {
+  var ui = SpreadsheetApp.getUi();
+  ui.createMenu('🍖 Quản Lý Cơm Tấm')
+    .addItem('⚡ Khởi tạo / Định dạng 5 Tabs Chuẩn', 'setupAllSheets')
+    .addItem('📊 Cập nhật Công thức Tổng Hợp KPI', 'setupKpiDashboard')
+    .addItem('📢 Gửi Tổng Kết Hôm Nay qua Telegram', 'sendTodaySummaryTelegram')
+    .addToUi();
+}
+
+// ================= XỬ LÝ POST TỪ WEB APP =================
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return jsonErr('Khong co du lieu POST');
+    }
     var data = JSON.parse(e.postData.contents);
     var type = data.type;
 
-    if (type === 'checkin' || type === 'checkout') return handleShift(data, type);
+    if (type === 'order' || type === 'table_order') return handleOrder(data, type);
+    if (type === 'checkin' || type === 'checkout') return handleAttendance(data, type);
     if (type === 'report') return handleReport(data);
-    if (type === 'order') return handleOrder(data);
-    if (type === 'delete_order') return handleDeleteOrderSheet(data);
+    if (type === 'off_request' || type === 'off') return handleOffRequest(data);
+    if (type === 'delete_order') return handleDeleteOrder(data);
     if (type === 'summary') return handleSummary(data);
-    return jsonOk('Khong ho tro type: ' + type);
+
+    return jsonOk('Da nhan nhung chua co handler cho type: ' + type);
   } catch (err) {
-    return jsonErr(err.toString());
+    return jsonErr('Loi xu ly doPost: ' + err.toString());
   }
 }
 
-// ================= TIEN ICH =================
-function getOrCreateSheet(name, headers) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
+// ================= XỬ LÝ GET (API DATA & SETUP) =================
+function doGet(e) {
+  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
 
-  // So sanh CA DONG header (khong chi o A1) -> setup lai dung theo truong
-  var need = false;
-  if (sheet.getLastRow() < 1) need = true;
-  else {
-    var first = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-    for (var hi = 0; hi < headers.length; hi++) {
-      if (String(first[hi] || '') !== headers[hi]) { need = true; break; }
+  if (action === 'data') return apiRealtimeData();
+  if (action === 'setup') return apiSetupSheets();
+  if (action === 'orders') return apiRecentOrders();
+  if (action === 'reset') return handleResetAllData();
+
+  // Mặc định: Dashboard HTML trực tiếp
+  return renderLiveDashboard();
+}
+
+// ================= 1. XỬ LÝ ĐƠN HÀNG (NHẬP MÓN & TẠI BÀN) =================
+function handleOrder(data, type) {
+  var headers = [
+    'Mã Đơn', 'Ngày', 'Giờ', 'Nguồn Đơn', 'Nhân Viên / Khách',
+    'Ca Làm', 'Chi Tiết Món', 'Số Món', 'Tổng Tiền',
+    'Phương Thức TT', 'Tiền Khách Đưa', 'Tiền Thối', 'Ghi Chú'
+  ];
+  var sheet = getOrCreateSheet('Đơn Hàng', headers, '#166534');
+  var t = nowParts();
+
+  var orderId = String(data.orderId || data.id || ('DH' + Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'HHmmss')));
+  var dateStr = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
+  var timeStr = t.gio;
+
+  var nguonDon = 'POS Thu ngân';
+  if (type === 'table_order' || data.tableNo) {
+    nguonDon = data.tableNo ? ('Bàn ' + data.tableNo) : 'Khách gọi bàn';
+  } else if (data.orderType === 'mang-ve') {
+    nguonDon = 'Mang về';
+  } else if (data.orderType === 'giao-hang' || data.paymentMethod === 'app') {
+    nguonDon = 'Đơn App / Giao hàng';
+  }
+
+  // Phân tích chi tiết món ăn
+  var lines = [];
+  var soMon = 0;
+  var detail = data.detail;
+
+  if (typeof detail === 'string') {
+    try { detail = JSON.parse(detail); } catch (err) { detail = null; }
+  }
+  if (Array.isArray(detail)) {
+    for (var i = 0; i < detail.length; i++) {
+      var it = detail[i];
+      var q = num(it.qty);
+      var p = num(it.price);
+      soMon += q;
+      var noteStr = it.note ? ' (' + it.note + ')' : '';
+      lines.push((it.name || 'Món') + ' x' + q + noteStr + ' = ' + moneyFmt(q * p));
     }
   }
-  if (need) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    if (sheet.getLastColumn() > headers.length) sheet.deleteColumns(headers.length + 1, sheet.getLastColumn() - headers.length);
+
+  if (lines.length === 0 && data.items) {
+    var raw = String(data.items);
+    var parts = raw.split(',');
+    for (var j = 0; j < parts.length; j++) {
+      var pt = parts[j].trim();
+      if (!pt) continue;
+      var m = pt.match(/x(\d+)/);
+      soMon += (m ? Number(m[1]) : 1);
+      lines.push(pt);
+    }
   }
 
-  var hr = sheet.getRange(1, 1, 1, headers.length);
-  hr.setFontWeight('bold').setBackground('#14663c').setFontColor('#ffffff');
-  sheet.setFrozenRows(1);
-  sheet.setRowHeight(1, 28);
+  if (lines.length === 0) {
+    lines.push('Đơn hàng cơm tấm');
+    soMon = 1;
+  }
+
+  // Phương thức thanh toán
+  var pt = 'Tiền mặt';
+  if (data.paymentMethod === 'chuyenkhoan') pt = 'Chuyển khoản';
+  else if (data.paymentMethod === 'app') pt = 'Đơn App';
+
+  // Ca làm
+  var caTxt = 'Ca Sáng (06h30-10h00)';
+  if (data.shift === 'trua') caTxt = 'Ca Trưa (10h00-14h00)';
+  else if (data.shift === 'chieu-toi') caTxt = 'Ca Chiều - Tối (16h00-21h00)';
+
+  sheet.appendRow([
+    orderId,
+    dateStr,
+    timeStr,
+    nguonDon,
+    data.staff || data.name || (data.tableNo ? 'Khách Bàn ' + data.tableNo : 'Khách'),
+    caTxt,
+    lines.join('\n'),
+    soMon,
+    num(data.total),
+    pt,
+    num(data.cash),
+    num(data.change),
+    data.note || ''
+  ]);
+
+  var r = sheet.getLastRow();
+  sheet.getRange(r, 9).setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontColor('#166534');
+  sheet.getRange(r, 11).setNumberFormat('#,##0" đ"');
+  sheet.getRange(r, 12).setNumberFormat('#,##0" đ"');
+  sheet.getRange(r, 7).setWrap(true).setVerticalAlignment('top');
+
+  // Thông báo Telegram
+  var tgMsg = '🛒 ĐƠN HÀNG MỚI #' + orderId + '\n'
+            + '📍 ' + nguonDon + ' | ' + caTxt + ' | ' + timeStr + '\n'
+            + '👤 ' + (data.staff || 'Khách gọi món') + '\n'
+            + '-----------------------------\n'
+            + lines.join('\n') + '\n'
+            + '-----------------------------\n'
+            + '💰 TỔNG CỘNG: ' + moneyFmt(data.total) + ' (' + pt + ')';
+  if (data.cash) tgMsg += '\n💵 Khách đưa: ' + moneyFmt(data.cash) + ' (Thối: ' + moneyFmt(data.change) + ')';
+  if (data.note) tgMsg += '\n📝 Ghi chú: ' + data.note;
+
+  sendTelegram(tgMsg);
+
+  return jsonOk('Đã lưu đơn ' + orderId + ' (' + moneyFmt(data.total) + ') vào Sheet Đơn Hàng!');
+}
+
+// ================= 2. XỬ LÝ CHẤM CÔNG (CHECK-IN / CHECK-OUT) =================
+function handleAttendance(data, type) {
+  var headers = ['Ngày', 'Giờ', 'Tên Nhân Viên', 'Thao Tác', 'Ca Làm Việc', 'Ghi Chú'];
+  var sheet = getOrCreateSheet('Chấm Công', headers, '#1e40af');
+  var t = nowParts();
+
+  var isCheckin = (type === 'checkin');
+  var actionLabel = isCheckin ? 'CHECK-IN' : 'CHECK-OUT';
+  var dateStr = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
+
+  sheet.appendRow([
+    dateStr,
+    t.gio,
+    data.staff || data.name || 'Nhân viên',
+    actionLabel,
+    data.shift || t.ca,
+    data.note || ''
+  ]);
+
+  var r = sheet.getLastRow();
+  var cellAction = sheet.getRange(r, 4);
+  if (isCheckin) {
+    cellAction.setBackground('#dcfce7').setFontColor('#15803d').setFontWeight('bold');
+  } else {
+    cellAction.setBackground('#fee2e2').setFontColor('#b91c1c').setFontWeight('bold');
+  }
+
+  // Telegram
+  var icon = isCheckin ? '✅' : '🚪';
+  var tgMsg = icon + ' ' + actionLabel + ': ' + (data.staff || data.name) + '\n'
+            + '⏰ Giờ: ' + t.gio + ' | Ngày: ' + dateStr + '\n'
+            + '🕒 Ca: ' + (data.shift || t.ca);
+  sendTelegram(tgMsg);
+
+  return jsonOk('Đã ghi nhận ' + actionLabel + ' cho ' + (data.staff || data.name) + ' lúc ' + t.gio);
+}
+
+// ================= 3. XỬ LÝ BÁO CÁO CUỐI CA =================
+function handleReport(data) {
+  var headers = ['Ngày', 'Giờ Chốt', 'Tên Nhân Viên', 'Ca Làm Việc', 'Tổng Doanh Thu', 'Tiền Mặt', 'Chuyển Khoản', 'Ghi Chú Cuối Ca'];
+  var sheet = getOrCreateSheet('Báo Cáo Cuối Ca', headers, '#b45309');
+  var t = nowParts();
+  var dateStr = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
+
+  var rev = num(data.revenue || data.doanhThu || data.doanh_thu);
+  var cash = num(data.cash || data.tienMat || data.tien_mat);
+  var bank = num(data.transfer || data.tienChuyenKhoan || data.tien_chuyen_khoan);
+
+  sheet.appendRow([
+    dateStr,
+    t.gio,
+    data.staff || data.name || '',
+    data.shift || t.ca,
+    rev,
+    cash,
+    bank,
+    data.note || data.ghi_chu || data.ghiChu || ''
+  ]);
+
+  var r = sheet.getLastRow();
+  sheet.getRange(r, 5).setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontColor('#b45309');
+  sheet.getRange(r, 6).setNumberFormat('#,##0" đ"');
+  sheet.getRange(r, 7).setNumberFormat('#,##0" đ"');
+
+  // Telegram
+  var tgMsg = '📋 BÁO CÁO CUỐI CA\n'
+            + '👤 ' + (data.staff || data.name) + ' | ' + (data.shift || t.ca) + '\n'
+            + '📅 ' + dateStr + ' ' + t.gio + '\n'
+            + '-----------------------------\n'
+            + '💰 Doanh thu ca: ' + moneyFmt(rev) + '\n'
+            + '💵 Tiền mặt: ' + moneyFmt(cash) + '\n'
+            + '💳 Chuyển khoản: ' + moneyFmt(bank) + '\n';
+  var note = data.note || data.ghi_chu || data.ghiChu;
+  if (note) tgMsg += '📝 Ghi chú: ' + note;
+
+  sendTelegram(tgMsg);
+
+  return jsonOk('Đã lưu báo cáo ca ' + moneyFmt(rev) + ' của ' + (data.staff || data.name));
+}
+
+// ================= 4. XỬ LÝ XIN NGHỈ CA (OFF CA) =================
+function handleOffRequest(data) {
+  var headers = ['Thời Gian Gửi', 'Tên Nhân Viên', 'Ngày Xin Nghỉ', 'Ca Xin Nghỉ', 'Lý Do Nghỉ', 'Trạng Thái'];
+  var sheet = getOrCreateSheet('Off Ca', headers, '#7c2d12');
+  var t = nowParts();
+
+  var sendTime = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy HH:mm:ss');
+  var offDate = normDay(data.date) || Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
+
+  sheet.appendRow([
+    sendTime,
+    data.staff || data.name || '',
+    offDate,
+    data.shift || 'Cả ngày',
+    data.reason || 'Bận việc gia đình',
+    'Chờ duyệt'
+  ]);
+
+  var r = sheet.getLastRow();
+  sheet.getRange(r, 6).setBackground('#fef3c7').setFontColor('#b45309').setFontWeight('bold');
+
+  // Telegram
+  var tgMsg = '🏖️ ĐƠN XIN NGHỈ CA MỚI\n'
+            + '👤 Nhân viên: ' + (data.staff || data.name) + '\n'
+            + '📅 Ngày xin nghỉ: ' + offDate + '\n'
+            + '🕒 Ca: ' + (data.shift || 'Cả ngày') + '\n'
+            + '📝 Lý do: ' + (data.reason || 'Bận việc gia đình');
+  sendTelegram(tgMsg);
+
+  return jsonOk('Đã gửi đơn xin nghỉ ca cho ' + (data.staff || data.name));
+}
+
+// ================= 5. XÓA ĐƠN HÀNG =================
+function handleDeleteOrder(data) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Đơn Hàng') || ss.getSheetByName('Don hang');
+  var orderId = String(data.orderId || data.id || '').trim();
+  if (!sheet || !orderId) return jsonErr('Không tìm thấy sheet Đơn Hàng hoặc Mã đơn');
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow <= 1) return jsonOk('Sheet trống');
+
+  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+  var deleted = 0;
+
+  for (var i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0] || '').trim() === orderId) {
+      sheet.deleteRow(i + 2);
+      deleted++;
+    }
+  }
+
+  if (deleted > 0) {
+    sendTelegram('🗑️ ĐÃ XÓA ĐƠN HÀNG #' + orderId + ' trên Google Sheets');
+    return jsonOk('Đã xóa ' + deleted + ' dòng cho đơn ' + orderId);
+  }
+  return jsonOk('Không tìm thấy đơn ' + orderId);
+}
+
+// ================= 6. TỰ ĐỘNG KHỞI TẠO 5 TABS CHUẨN =================
+function setupAllSheets() {
+  // 1. Tab Đơn Hàng
+  getOrCreateSheet('Đơn Hàng', [
+    'Mã Đơn', 'Ngày', 'Giờ', 'Nguồn Đơn', 'Nhân Viên / Khách',
+    'Ca Làm', 'Chi Tiết Món', 'Số Món', 'Tổng Tiền',
+    'Phương Thức TT', 'Tiền Khách Đưa', 'Tiền Thối', 'Ghi Chú'
+  ], '#166534');
+
+  // 2. Tab Chấm Công
+  getOrCreateSheet('Chấm Công', [
+    'Ngày', 'Giờ', 'Tên Nhân Viên', 'Thao Tác', 'Ca Làm Việc', 'Ghi Chú'
+  ], '#1e40af');
+
+  // 3. Tab Báo Cáo Cuối Ca
+  getOrCreateSheet('Báo Cáo Cuối Ca', [
+    'Ngày', 'Giờ Chốt', 'Tên Nhân Viên', 'Ca Làm Việc',
+    'Tổng Doanh Thu', 'Tiền Mặt', 'Chuyển Khoản', 'Ghi Chú Cuối Ca'
+  ], '#b45309');
+
+  // 4. Tab Off Ca
+  getOrCreateSheet('Off Ca', [
+    'Thời Gian Gửi', 'Tên Nhân Viên', 'Ngày Xin Nghỉ', 'Ca Xin Nghỉ', 'Lý Do Nghỉ', 'Trạng Thái'
+  ], '#7c2d12');
+
+  // 5. Tab Tổng Hợp KPI
+  setupKpiDashboard();
+
+  return 'Đã khởi tạo thành công 5 tabs: Đơn Hàng, Chấm Công, Báo Cáo Cuối Ca, Off Ca, Tổng Hợp KPI!';
+}
+
+// Tạo trang Tổng Hợp KPI với các công thức tự động
+function setupKpiDashboard() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('Tổng Hợp KPI');
+  if (!sheet) sheet = ss.insertSheet('Tổng Hợp KPI', 0); // Đưa lên đầu
+
+  sheet.clear();
+  sheet.setTabColor('#f59e0b');
+
+  // Tiêu đề
+  sheet.getRange('A1:F1').merge()
+    .setValue('🍖 TRẠM KHỞI NGHIỆP – BẢNG ĐIỀU KHIỂN DOANH THU & KPI TỰ ĐỘNG')
+    .setBackground('#0f172a').setFontColor('#f59e0b')
+    .setFontWeight('bold').setFontSize(14)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sheet.setRowHeight(1, 40);
+
+  // Khối 1: Hôm nay
+  sheet.getRange('A3:F3').merge().setValue('📌 CHỈ SỐ HÔM NAY (REAL-TIME)').setFontWeight('bold').setBackground('#f1f5f9').setFontColor('#0f172a');
+  
+  sheet.getRange('A4').setValue('Chỉ số').setFontWeight('bold');
+  sheet.getRange('B4').setValue('Giá trị').setFontWeight('bold');
+  sheet.getRange('C4').setValue('Công thức / Nguồn').setFontWeight('bold');
+
+  sheet.getRange('A5').setValue('Doanh Thu Hôm Nay:');
+  sheet.getRange('B5').setFormula('=IFERROR(SUMIFS(\'Đơn Hàng\'!I:I, \'Đơn Hàng\'!B:B, TEXT(TODAY(), "dd/mm/yyyy")), 0)').setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontSize(12).setFontColor('#166534');
+  sheet.getRange('C5').setValue('Tổng tiền cột I từ sheet Đơn Hàng');
+
+  sheet.getRange('A6').setValue('Số Đơn Hàng Hôm Nay:');
+  sheet.getRange('B6').setFormula('=IFERROR(COUNTIF(\'Đơn Hàng\'!B:B, TEXT(TODAY(), "dd/mm/yyyy")), 0)').setFontWeight('bold');
+  sheet.getRange('C6').setValue('Đếm số đơn cột B từ sheet Đơn Hàng');
+
+  sheet.getRange('A7').setValue('Tiền Mặt Hôm Nay:');
+  sheet.getRange('B7').setFormula('=IFERROR(SUMIFS(\'Đơn Hàng\'!I:I, \'Đơn Hàng\'!B:B, TEXT(TODAY(), "dd/mm/yyyy"), \'Đơn Hàng\'!J:J, "*Tiền mặt*"), 0)').setNumberFormat('#,##0" đ"');
+  sheet.getRange('C7').setValue('Cột J = Tiền mặt');
+
+  sheet.getRange('A8').setValue('Chuyển Khoản Hôm Nay:');
+  sheet.getRange('B8').setFormula('=IFERROR(SUMIFS(\'Đơn Hàng\'!I:I, \'Đơn Hàng\'!B:B, TEXT(TODAY(), "dd/mm/yyyy"), \'Đơn Hàng\'!J:J, "*Chuyển khoản*"), 0)').setNumberFormat('#,##0" đ"');
+  sheet.getRange('C8').setValue('Cột J = Chuyển khoản');
+
+  // Khối 2: Tuần & Tháng
+  sheet.getRange('A10:F10').merge().setValue('📈 TỔNG QUAN TOÀN BỘ HỆ THỐNG').setFontWeight('bold').setBackground('#f1f5f9').setFontColor('#0f172a');
+
+  sheet.getRange('A11').setValue('Tổng Doanh Thu Đã Bán:');
+  sheet.getRange('B11').setFormula('=IFERROR(SUM(\'Đơn Hàng\'!I2:I), 0)').setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontColor('#b45309');
+
+  sheet.getRange('A12').setValue('Tổng Số Đơn Đã Bán:');
+  sheet.getRange('B12').setFormula('=IFERROR(COUNTA(\'Đơn Hàng\'!A2:A), 0)').setFontWeight('bold');
+
+  sheet.getRange('A13').setValue('Tổng Lượt Chấm Công:');
+  sheet.getRange('B13').setFormula('=IFERROR(COUNTA(\'Chấm Công\'!A2:A), 0)');
+
+  sheet.getRange('A14').setValue('Số Đơn Xin Nghỉ Ca:');
+  sheet.getRange('B14').setFormula('=IFERROR(COUNTA(\'Off Ca\'!A2:A), 0)');
+
+  sheet.setColumnWidth(1, 200);
+  sheet.setColumnWidth(2, 180);
+  sheet.setColumnWidth(3, 260);
+
   return sheet;
 }
 
-function moneyFmt(v) {
-  if (v === '' || v === undefined || v === null) return '';
-  var n = Number(v);
-  if (isNaN(n)) return v;
-  return n.toLocaleString('vi-VN') + ' d';
+// ================= 7. API TRẢ DỮ LIỆU REAL-TIME CHO WEB APP (?action=data) =================
+function apiRealtimeData() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var t = nowParts();
+
+  var tongDoanhThu = 0, tongTienMat = 0, tongChuyenKhoan = 0, soDon = 0, soMon = 0;
+  var recentOrders = [];
+  var baoCaoList = [];
+  var attendanceList = [];
+  var offList = [];
+
+  // 1. Đọc sheet Đơn Hàng
+  var dh = ss.getSheetByName('Đơn Hàng') || ss.getSheetByName('Don hang');
+  if (dh && dh.getLastRow() > 1) {
+    var maxRows = Math.min(dh.getLastRow() - 1, 200);
+    var startRow = Math.max(2, dh.getLastRow() - maxRows + 1);
+    var numRows = dh.getLastRow() - startRow + 1;
+    var dvals = dh.getRange(startRow, 1, numRows, dh.getLastColumn()).getValues();
+
+    for (var i = dvals.length - 1; i >= 0; i--) {
+      var row = dvals[i];
+      var orderId = String(row[0] || '');
+      var ngay = normDay(row[1]);
+      var gio = normHour(row[2]);
+      var total = num(row[8]);
+      var pt = String(row[9] || '');
+
+      if (ngay === t.ngay) {
+        soDon++;
+        tongDoanhThu += total;
+        soMon += num(row[7]);
+        if (pt.toLowerCase().indexOf('chuyen') >= 0 || pt.toLowerCase().indexOf('ck') >= 0) {
+          tongChuyenKhoan += total;
+        } else {
+          tongTienMat += total;
+        }
+      }
+
+      if (recentOrders.length < 50) {
+        recentOrders.push({
+          id: orderId,
+          date: ngay,
+          time: gio,
+          staff: String(row[4] || ''),
+          source: String(row[3] || ''),
+          shift: String(row[5] || ''),
+          items: String(row[6] || ''),
+          total: total,
+          paymentMethod: pt
+        });
+      }
+    }
+  }
+
+  // 2. Đọc sheet Báo Cáo Cuối Ca
+  var bc = ss.getSheetByName('Báo Cáo Cuối Ca') || ss.getSheetByName('Bao cao doanh thu');
+  if (bc && bc.getLastRow() > 1) {
+    var bvals = bc.getRange(2, 1, bc.getLastRow() - 1, Math.min(bc.getLastColumn(), 8)).getValues();
+    for (var b = bvals.length - 1; b >= 0; b--) {
+      var brow = bvals[b];
+      baoCaoList.push({
+        ngay: normDay(brow[0]),
+        gio: normHour(brow[1]),
+        nv: String(brow[2] || ''),
+        ca: String(brow[3] || ''),
+        doanhThu: num(brow[4]),
+        tienMat: num(brow[5]),
+        tienChuyenKhoan: num(brow[6]),
+        ghiChu: String(brow[7] || '')
+      });
+    }
+  }
+
+  var res = {
+    ok: true,
+    store: STORE_NAME,
+    thoiGian: t.gio,
+    ngay: t.ngay,
+    ca: t.ca,
+    kpi: {
+      doanhThu: tongDoanhThu,
+      tienMat: tongTienMat,
+      tienChuyenKhoan: tongChuyenKhoan,
+      soDon: soDon,
+      soMon: soMon
+    },
+    donHang: recentOrders,
+    baoCao: baoCaoList
+  };
+
+  return ContentService.createTextOutput(JSON.stringify(res))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function apiSetupSheets() {
+  var msg = setupAllSheets();
+  return jsonOk(msg);
+}
+
+function apiRecentOrders() {
+  return apiRealtimeData();
+}
+
+// ================= TIỆN ÍCH TẠO SHEET =================
+function getOrCreateSheet(name, headers, headerColor) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  }
+
+  // Kiểm tra header dòng 1
+  var needHeader = false;
+  if (sheet.getLastRow() < 1) {
+    needHeader = true;
+  } else {
+    var firstRow = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+    for (var i = 0; i < headers.length; i++) {
+      if (String(firstRow[i] || '') !== headers[i]) {
+        needHeader = true;
+        break;
+      }
+    }
+  }
+
+  if (needHeader) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+
+  // Định dạng dòng tiêu đề
+  var hr = sheet.getRange(1, 1, 1, headers.length);
+  hr.setFontWeight('bold')
+    .setBackground(headerColor || '#14663c')
+    .setFontColor('#ffffff')
+    .setVerticalAlignment('middle')
+    .setHorizontalAlignment('center');
+
+  sheet.setFrozenRows(1);
+  sheet.setRowHeight(1, 32);
+
+  return sheet;
+}
+
+function nowParts() {
+  var now = new Date();
+  var h = now.getHours();
+  var ca = 'Ca Chiều - Tối (16h00-21h00)';
+  if (h >= 6 && h < 10) ca = 'Ca Sáng (06h30-10h00)';
+  else if (h >= 10 && h < 15) ca = 'Ca Trưa (10h00-14h00)';
+
+  return {
+    ngay: Utilities.formatDate(now, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy'),
+    gio: Utilities.formatDate(now, 'Asia/Ho_Chi_Minh', 'HH:mm:ss'),
+    ca: ca
+  };
 }
 
 function num(v) {
   var n = Number(v);
   return isNaN(n) ? 0 : n;
 }
+
+function moneyFmt(v) {
+  var n = Number(v);
+  if (isNaN(n) || n === 0) return '0 đ';
+  return n.toLocaleString('vi-VN') + ' đ';
+}
+
 function normDay(v) {
+  if (!v) return '';
   if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy');
   var s = String(v).trim();
   if (s.length > 10 && s.indexOf('/') < 0) {
@@ -67,216 +570,28 @@ function normDay(v) {
   }
   return s.substring(0, 10);
 }
+
 function normHour(v) {
-  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'HH:mm');
+  if (!v) return '';
+  if (v instanceof Date) return Utilities.formatDate(v, 'Asia/Ho_Chi_Minh', 'HH:mm:ss');
   var s = String(v).trim();
   var m = s.match(/(\d{1,2}):(\d{2})/);
   if (m) return (m[1].length === 1 ? '0' + m[1] : m[1]) + ':' + m[2];
-  if (s.length > 10 && s.indexOf(':') < 0) {
-    var d = new Date(s);
-    if (!isNaN(d.getTime())) return Utilities.formatDate(d, 'Asia/Ho_Chi_Minh', 'HH:mm');
-  }
-  return s.substring(0, 5);
+  return s.substring(0, 8);
 }
 
-
-
-function getShiftLabel(h) {
-  if (h >= 6 && h < 11) return 'Sang (6h-11h)';
-  if (h >= 16 && h < 21) return 'Chieu toi (16h-21h)';
-  return 'Ngoai gio';
+function jsonOk(msg) {
+  return ContentService.createTextOutput(JSON.stringify({ ok: true, msg: msg }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
-function nowParts() {
-  var now = new Date();
-  return {
-    ngay: Utilities.formatDate(now, 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy'),
-    gio: Utilities.formatDate(now, 'Asia/Ho_Chi_Minh', 'HH:mm:ss'),
-    ngayDate: new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0),
-  };
+function jsonErr(msg) {
+  return ContentService.createTextOutput(JSON.stringify({ ok: false, msg: msg }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
-
-function jsonOk(msg) { return ContentService.createTextOutput(JSON.stringify({ ok: true, msg: msg })).setMimeType(ContentService.MimeType.JSON); }
-function jsonErr(msg) { return ContentService.createTextOutput(JSON.stringify({ ok: false, msg: msg })).setMimeType(ContentService.MimeType.JSON); }
-// ================= CHAM CONG =================
-function handleShift(data, type) {
-  var headers = ['Ngay', 'Gio', 'Ten nhan vien', 'Thao tac', 'Ca', 'Ghi chu'];
-  var sheet = getOrCreateSheet('Cham cong', headers);
-  var t = nowParts();
-  var label = type === 'checkin' ? 'CHECK-IN' : 'CHECK-OUT';
-  sheet.appendRow([Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy'), t.gio, data.name || data.staff || '', label, t.ca, data.note || '']);
-
-  var r = sheet.getLastRow();
-  var cell = sheet.getRange(r, 4);
-  if (type === 'checkin') {
-    cell.setBackground('#d9ead3').setFontColor('#1e7b1e').setFontWeight('bold');
-  } else {
-    cell.setBackground('#f4cccc').setFontColor('#cc0000').setFontWeight('bold');
-  }
-  sheet.getRange(r, 2).setNumberFormat('@');
-  sheet.autoResizeColumns(1, 5);
-  var emo = (type === 'checkin') ? String.fromCodePoint(0x2705) : String.fromCodePoint(0x1F534);
-  sendTelegram(emo + ' ' + label + ': ' + (data.name || data.staff) + ' luc ' + t.gio + ' (' + t.ca + ')');
-  return jsonOk('Da ghi nhan ' + label + ' cho ' + (data.name || data.staff) + ' luc ' + t.gio);
-}
-
-// ================= DON HANG (POS) =================
-function handleOrder(data) {
-  var headers = ['Ma don', 'Ngay', 'Gio', 'Nhan vien', 'Ca', 'Mon hang (chi tiet)', 'So mon', 'Tong tien', 'Tien khach', 'Tien thoi', 'Ghi chu'];
-  var sheet = getOrCreateSheet('Don hang', headers);
-  var t = nowParts();
-
-  // Chi tiet mon hang: ho tro ca 3 dang (object array / JSON string / text items)
-  var lines = [];
-  var soMon = 0;
-  var detail = data.detail;
-
-  if (typeof detail === 'string') {
-    try { detail = JSON.parse(detail); } catch (err2) { detail = null; }
-  }
-  if (Array.isArray(detail)) {
-    for (var i = 0; i < detail.length; i++) {
-      var it = detail[i];
-      var q = num(it.qty);
-      var p = num(it.price);
-      soMon += q;
-      lines.push((it.name || 'Mon ?') + ' x' + q + ' = ' + moneyFmt(q * p));
-    }
-  }
-  if (lines.length === 0) {
-    var raw = String(data.items || '');
-    var parts = raw.split(',');
-    for (var j = 0; j < parts.length; j++) {
-      var pt = parts[j].trim();
-      if (!pt) continue;
-      var m = pt.match(/x(\d+)$/);
-      var qty = m ? Number(m[1]) : 1;
-      soMon += qty;
-      lines.push(pt);
-    }
-  }
-  if (lines.length === 0) {
-    lines.push(data.order || data.item || 'Don hang');
-    soMon = 1;
-  }
-
-  var shiftTxt = data.shift === 'sang' ? 'Sang (6h-11h)' : 'Chieu toi (16h-21h)';
-  var orderId = String(data.orderId || data.id || ('DH' + Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'HHmmss')));
-  var noteTxt = data.note || '';
-  if (data.paymentMethod === 'chuyenkhoan' || data.payment_method === 'chuyenkhoan') {
-    noteTxt = (noteTxt ? noteTxt + ' | ' : '') + 'Chuyen khoan';
-  }
-  sheet.appendRow([
-    orderId,
-    Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy'),
-    t.gio,
-    data.staff || data.name || '',
-    shiftTxt,
-    lines.join('\n'),
-    soMon,
-    num(data.total),
-    num(data.cash),
-    num(data.change),
-    noteTxt
-  ]);
-
-  sendTelegram(tgOrderMsg(data, lines, soMon, shiftTxt, t, orderId));
-  var r = sheet.getLastRow();
-  sheet.getRange(r, 8).setNumberFormat('#,##0" d"').setFontWeight('bold');
-  sheet.getRange(r, 9).setNumberFormat('#,##0" d"');
-  sheet.getRange(r, 10).setNumberFormat('#,##0" d"');
-  sheet.getRange(r, 6).setWrap(true).setVerticalAlignment('top');
-  if (sheet.getLastRow() > 1) {
-    var lastRowD = sheet.getLastRow();
-    sheet.getRange(2, 2, lastRowD - 1, 1).setNumberFormat('@');
-    sheet.getRange(2, 3, lastRowD - 1, 1).setNumberFormat('@');
-  }
-  sheet.autoResizeColumns(1, 7);
-  return jsonOk('Da luu don hang ' + orderId + ' (' + soMon + ' mon, ' + moneyFmt(data.total) + ')');
-}
-// ================= BAO CAO DOANH THU =================
-function handleReport(data) {
-  var headers = ['Ngay', 'Gio', 'Ten nhan vien', 'Ca', 'Doanh thu', 'Tien mat', 'Ghi chu'];
-  var sheet = getOrCreateSheet('Bao cao doanh thu', headers);
-  var t = nowParts();
-  var noteTxt = data.note || data.ghi_chu || '';
-  if (data.transfer || data.tien_chuyen_khoan) {
-    var ck = num(data.transfer || data.tien_chuyen_khoan);
-    if (ck > 0) noteTxt = (noteTxt ? noteTxt + ' | ' : '') + 'Chuyen khoan: ' + moneyFmt(ck);
-  }
-  sheet.appendRow([
-    Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'dd/MM/yyyy'),
-    t.gio,
-    data.name || data.staff || '',
-    t.ca,
-    num(data.revenue || data.doanh_thu),
-    num(data.cash || data.tien_mat),
-    noteTxt
-  ]);
-
-  sendTelegram(tgReportMsg(data, t));
-  var r = sheet.getLastRow();
-  sheet.getRange(r, 5).setNumberFormat('#,##0" d"').setFontWeight('bold');
-  sheet.getRange(r, 6).setNumberFormat('#,##0" d"');
-  sheet.getRange(r, 2).setNumberFormat('@');
-  sheet.autoResizeColumns(1, 5);
-  return jsonOk('Da luu bao cao doanh thu ' + moneyFmt(data.revenue || data.doanh_thu) + ' cho ' + (data.name || data.staff || ''));
-}
-// ================= BAO CAO TONG HOP CHI TIET (REAL-TIME) =================
-function handleSummary(data) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var t = nowParts();
-  var lines = [];
-  var tongDoanhThu = 0, tongTienMat = 0, soDon = 0, soMon = 0;
-  var nvMap = {};
-
-  // 1. Don hang hom nay
-  var dh = ss.getSheetByName('Don hang');
-  if (dh && dh.getLastRow() > 1) {
-    var vals = dh.getRange(2, 1, dh.getLastRow() - 1, 11).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      if (normDay(vals[i][1]) !== t.ngay) continue;
-      soDon++;
-      tongDoanhThu += num(vals[i][7]);
-      soMon += num(vals[i][6]);
-      var nv = String(vals[i][3] || '?');
-      nvMap[nv] = (nvMap[nv] || 0) + num(vals[i][7]);
-    }
-  }
-
-  // 2. Bao cao doanh thu hom nay
-  var bc = ss.getSheetByName('Bao cao doanh thu');
-  if (bc && bc.getLastRow() > 1) {
-    var bvals = bc.getRange(2, 1, bc.getLastRow() - 1, 7).getValues();
-    for (var k = 0; k < bvals.length; k++) {
-      if (normDay(bvals[k][0]) !== t.ngay) continue;
-      tongTienMat += num(bvals[k][5]);
-    }
-  }
-
-  lines.push(String.fromCodePoint(0x1F4CA) + ' TONG KET ' + t.ngay);
-  lines.push(String.fromCodePoint(0x1F4C5) + ' ' + t.gio + ' | ' + t.ca);
-  lines.push('----------------------');
-  lines.push(String.fromCodePoint(0x1F6D2) + ' So don: ' + soDon + ' | So mon: ' + soMon);
-  lines.push(String.fromCodePoint(0x1F4B0) + ' Doanh thu: ' + moneyFmt(tongDoanhThu));
-  lines.push(String.fromCodePoint(0x1F4B5) + ' Tien mat: ' + moneyFmt(tongTienMat));
-  if (Object.keys(nvMap).length > 0) {
-    lines.push('----------------------');
-    lines.push('Theo nhan vien:');
-    var names = Object.keys(nvMap);
-    for (var n = 0; n < names.length; n++) {
-      lines.push('  - ' + names[n] + ': ' + moneyFmt(nvMap[names[n]]));
-    }
-  }
-
-  sendTelegram(lines.join('\n'));
-  return jsonOk('Da gui tong ket real-time');
-}
-// ================= TELEGRAM REAL-TIME =================
-var TG_BOT_TOKEN = '8755799868:AAHKmMYP9TAm3fAFiGO0zLDYIpcddV90oFc';
-var TG_CHAT_ID = '7220726428';
 
 function sendTelegram(text) {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return;
   try {
     var payload = {
       method: 'post',
@@ -287,296 +602,58 @@ function sendTelegram(text) {
       }
     };
     UrlFetchApp.fetch('https://api.telegram.org/bot' + TG_BOT_TOKEN + '/sendMessage', payload);
-    Logger.log('TG OK: ' + text.substring(0, 60));
   } catch (err) {
-    Logger.log('TG FAIL: ' + err);
+    Logger.log('Telegram error: ' + err);
   }
 }
 
-function tgOrderMsg(data, lines, soMon, shiftTxt, t, orderId) {
-  var msg = String.fromCodePoint(0x1F6D2) + ' DON MOI #' + orderId
-          + String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F464) + ' ' + (data.staff || data.name || '?') + ' | ' + shiftTxt + ' | ' + t.gio
-    lines.join('\n'),
-          + String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F4B0) + ' Tong: ' + moneyFmt(data.total);
-  if (data.cash) msg += String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F4B5) + ' Khach dua: ' + moneyFmt(data.cash);
-  var note = data.note || data.ghi_chu;
-  if (note) msg += String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F4DD) + ' Ghi chu: ' + note;
-  return msg;
+function sendTodaySummaryTelegram() {
+  var t = nowParts();
+  var data = apiRealtimeData();
+  var d = JSON.parse(data.getContent());
+  var k = d.kpi;
+
+  var msg = '📊 TỔNG KẾT DOANH THU HÔM NAY (' + t.ngay + ')\n'
+          + '⏰ Cập nhật lúc: ' + t.gio + '\n'
+          + '-----------------------------\n'
+          + '💰 TỔNG THU: ' + moneyFmt(k.doanhThu) + '\n'
+          + '📦 SỐ ĐƠN: ' + k.soDon + ' đơn (' + k.soMon + ' phần)\n'
+          + '💵 TIỀN MẶT: ' + moneyFmt(k.tienMat) + '\n'
+          + '💳 CHUYỂN KHOẢN: ' + moneyFmt(k.tienChuyenKhoan);
+  sendTelegram(msg);
 }
 
-function tgReportMsg(data, t) {
-  var msg = String.fromCodePoint(0x1F4CA) + ' BAO CAO DOANH THU'
-          + String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F464) + ' ' + (data.name || data.staff || '?') + ' | ' + t.ca + ' | ' + t.ngay + ' ' + t.gio
-          + String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F4B0) + ' Doanh thu: ' + moneyFmt(data.revenue || data.doanh_thu)
-          + String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F4B5) + ' Tien mat: ' + moneyFmt(data.cash || data.tien_mat);
-  var note = data.note || data.ghi_chu;
-  if (note) msg += String.fromCodePoint(0x0A) + String.fromCodePoint(0x1F4DD) + ' Ghi chu: ' + note;
-  return msg;
-}
-
-
-// ================= DASHBOARD CO DONG - BIEU DO REAL-TIME =================
-
-// ================= API JSON CHO TRANG GITHUB (?action=data) =================
-
-// ================= RESET DU LIEU (xoa sach test, giu header) =================
-function handleReset() {
+// Reset sạch dữ liệu test nhưng giữ nguyên Header 5 tabs
+function handleResetAllData() {
+  setupAllSheets();
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  // Setup lai header DUNG THEO TRUONG truoc khi xoa du lieu
-  getOrCreateSheet('Don hang', ['Ma don', 'Ngay', 'Gio', 'Nhan vien', 'Ca', 'Mon hang (chi tiet)', 'So mon', 'Tong tien', 'Tien khach', 'Tien thoi', 'Ghi chu']);
-  getOrCreateSheet('Cham cong', ['Ngay', 'Gio', 'Ten nhan vien', 'Thao tac', 'Ca', 'Ghi chu']);
-  getOrCreateSheet('Bao cao doanh thu', ['Ngay', 'Gio', 'Ten nhan vien', 'Ca', 'Doanh thu', 'Tien mat', 'Ghi chu']);
-  var names = ['Don hang', 'Cham cong', 'Bao cao doanh thu'];
-  var msgs = [];
+  var names = ['Đơn Hàng', 'Chấm Công', 'Báo Cáo Cuối Ca', 'Off Ca'];
   for (var i = 0; i < names.length; i++) {
     var s = ss.getSheetByName(names[i]);
     if (s && s.getLastRow() > 1) {
-      var n = s.getLastRow() - 1;
-      s.getRange(2, 1, n, s.getLastColumn()).clearContent();
-      msgs.push(names[i] + ': xoa ' + n + ' dong');
+      s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).clearContent();
     }
   }
-  return jsonOk('Reset xong! ' + msgs.join(', '));
+  return jsonOk('Đã xóa dữ liệu test trên 4 tabs, giữ nguyên header chuẩn!');
 }
 
-function apiData() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+// HTML Dashboard xem trực tiếp
+function renderLiveDashboard() {
   var t = nowParts();
-  var tongDoanhThu = 0, tongTienMat = 0, soDon = 0, soMon = 0;
-  var nvMap = {}, nvDon = {}, gioMap = {}, ngayMap = {};
-  var gioKeys = [], gioVals = [], ngayKeys = [], ngayVals = [];
-  var nvNames = [], nvVals = [], nvDonVals = [];
-  var baoCao = [];
-
-  var dh = ss.getSheetByName('Don hang');
-  if (dh && dh.getLastRow() > 1) {
-    var vals = dh.getRange(2, 1, dh.getLastRow() - 1, 11).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      var ngayStr = normDay(vals[i][1]);
-      var gioStr = normHour(vals[i][2]).substring(0, 2) + 'h';
-      var tien = num(vals[i][7]);
-      var nv = String(vals[i][3] || '?');
-      var soM = num(vals[i][6]);
-      if (ngayStr === t.ngay) {
-        soDon++; tongDoanhThu += tien; soMon += soM;
-        nvMap[nv] = (nvMap[nv] || 0) + tien;
-        nvDon[nv] = (nvDon[nv] || 0) + 1;
-        gioMap[gioStr] = (gioMap[gioStr] || 0) + tien;
-      }
-      ngayMap[ngayStr] = (ngayMap[ngayStr] || 0) + tien;
-    }
-  }
-
-  var bc = ss.getSheetByName('Bao cao doanh thu');
-  if (bc && bc.getLastRow() > 1) {
-    var bvals = bc.getRange(2, 1, bc.getLastRow() - 1, 7).getValues();
-    for (var k = 0; k < bvals.length; k++) {
-      if (normDay(bvals[k][0]) === t.ngay) tongTienMat += num(bvals[k][5]);
-      baoCao.push({
-        ngay: normDay(bvals[k][0]),
-        gio: normHour(bvals[k][1]),
-        nv: String(bvals[k][2] || ''),
-        ca: String(bvals[k][3] || ''),
-        doanhThu: num(bvals[k][4]),
-        tienMat: num(bvals[k][5]),
-        ghiChu: String(bvals[k][6] || '')
-      });
-    }
-  }
-  baoCao.reverse();
-
-  var gAll = Object.keys(gioMap).sort();
-  for (var g = 0; g < gAll.length; g++) { gioKeys.push(gAll[g]); gioVals.push(gioMap[gAll[g]]); }
-  var nAll = Object.keys(nvMap).sort(function (a, b) { return nvMap[b] - nvMap[a]; });
-  for (var n2 = 0; n2 < nAll.length; n2++) {
-    nvNames.push(nAll[n2]); nvVals.push(nvMap[nAll[n2]]); nvDonVals.push(nvDon[nAll[n2]] || 0);
-  }
-  var nAll2 = Object.keys(ngayMap).sort();
-  var start7 = Math.max(0, nAll2.length - 7);
-  for (var d7 = start7; d7 < nAll2.length; d7++) { ngayKeys.push(nAll2[d7]); ngayVals.push(ngayMap[nAll2[d7]]); }
-
-  var out = {
-    ok: true,
-    thoiGian: t.gio,
-    ngay: t.ngay,
-    ca: t.ca,
-    kpi: { doanhThu: tongDoanhThu, tienMat: tongTienMat, soDon: soDon, soMon: soMon },
-    gio: { keys: gioKeys, vals: gioVals },
-    nv: { names: nvNames, vals: nvVals, don: nvDonVals, donVals: nvDonVals },
-    ngay: { keys: ngayKeys, vals: ngayVals },
-    baoCao: baoCao
-  };
-  return ContentService.createTextOutput(JSON.stringify(out))
-    .setMimeType(ContentService.MimeType.JSON)
-}
-
-function doGet(e) {
-  if (e && e.parameter && e.parameter.action === 'data') return apiData();
-  if (e && e.parameter && e.parameter.action === 'reset') return handleReset();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var t = nowParts();
-  var L = [];
-
-  // ---- Du lieu tong hop hom nay ----
-  var tongDoanhThu = 0, tongTienMat = 0, soDon = 0, soMon = 0;
-  var nvMap = {};        // doanh thu theo NV
-  var nvDon = {};        // so don theo NV
-  var gioMap = {};       // doanh thu theo gio (bieu do)
-  var ngayMap = {};      // doanh thu 7 ngay gan nhat
-  var gioKeys = [], gioVals = [];
-  var ngayKeys = [], ngayVals = [];
-  var nvNames = [], nvVals = [], nvDonVals = [];
-
-  var dh = ss.getSheetByName('Don hang');
-  if (dh && dh.getLastRow() > 1) {
-    var vals = dh.getRange(2, 1, dh.getLastRow() - 1, 11).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      var ngayStr = normDay(vals[i][1]);
-      var gioStr = normHour(vals[i][2]).substring(0, 2) + 'h';
-      var tien = num(vals[i][7]);
-      var nv = String(vals[i][3] || '?');
-      var soM = num(vals[i][6]);
-
-      // Hom nay
-      if (ngayStr === t.ngay) {
-        soDon++;
-        tongDoanhThu += tien;
-        soMon += soM;
-        nvMap[nv] = (nvMap[nv] || 0) + tien;
-        nvDon[nv] = (nvDon[nv] || 0) + 1;
-        gioMap[gioStr] = (gioMap[gioStr] || 0) + tien;
-      }
-      // 7 ngay gan nhat
-      ngayMap[ngayStr] = (ngayMap[ngayStr] || 0) + tien;
-    }
-  }
-
-  var bc = ss.getSheetByName('Bao cao doanh thu');
-  if (bc && bc.getLastRow() > 1) {
-    var bvals = bc.getRange(2, 1, bc.getLastRow() - 1, 7).getValues();
-    for (var k = 0; k < bvals.length; k++) {
-      if (normDay(bvals[k][0]) === t.ngay) tongTienMat += num(bvals[k][5]);
-    }
-  }
-
-  // Sap xep gio tang dan
-  var gAll = Object.keys(gioMap).sort();
-  for (var g = 0; g < gAll.length; g++) {
-    gioKeys.push(gAll[g]);
-    gioVals.push(gioMap[gAll[g]]);
-  }
-  // Sap xep NV theo doanh thu giam dan
-  var nAll = Object.keys(nvMap).sort(function (a, b) { return nvMap[b] - nvMap[a]; });
-  for (var n2 = 0; n2 < nAll.length; n2++) {
-    nvNames.push(nAll[n2]);
-    nvVals.push(nvMap[nAll[n2]]);
-    nvDonVals.push(nvDon[nAll[n2]] || 0);
-  }
-  // 7 ngay gan nhat (ngay gan nhat dung sau)
-  var nAll2 = Object.keys(ngayMap).sort();
-  var start7 = Math.max(0, nAll2.length - 7);
-  for (var d7 = start7; d7 < nAll2.length; d7++) {
-    ngayKeys.push(nAll2[d7]);
-    ngayVals.push(ngayMap[nAll2[d7]]);
-  }
-
-  // ---- HTML Dashboard voi Chart.js ----
-  L.push('<!DOCTYPE html>');
-  L.push('<html lang="vi"><head><meta charset="UTF-8">');
-  L.push('<meta name="viewport" content="width=device-width, initial-scale=1.0">');
-  L.push('<meta http-equiv="refresh" content="30">');
-  L.push('<title>SAM MIX - Dashboard Co Dong</title>');
-  L.push('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>');
-  L.push('<style>');
-  L.push('*{margin:0;padding:0;box-sizing:border-box}');
-  L.push('body{font-family:Segoe UI,Arial,sans-serif;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);min-height:100vh;color:#fff;padding:16px}');
-  L.push('.wrap{max-width:960px;margin:0 auto}');
-  L.push('.header{text-align:center;padding:18px;background:rgba(255,255,255,.08);border-radius:16px;margin-bottom:16px}');
-  L.push('.header h1{font-size:26px;letter-spacing:1px}');
-  L.push('.header .sub{font-size:13px;opacity:.8;margin-top:6px}');
-  L.push('.badge{display:inline-block;background:#00c853;color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:bold;margin-top:8px}');
-  L.push('.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}');
-  L.push('.card{background:rgba(255,255,255,.1);border-radius:14px;padding:16px;text-align:center;backdrop-filter:blur(4px)}');
-  L.push('.card .label{font-size:12px;opacity:.75;text-transform:uppercase;letter-spacing:.5px}');
-  L.push('.card .val{font-size:26px;font-weight:bold;margin-top:8px}');
-  L.push('.card .val.green{color:#69f0ae}.card .val.yellow{color:#ffd740}.card .val.blue{color:#40c4ff}.card .val.pink{color:#ff80ab}');
-  L.push('.sec{background:rgba(255,255,255,.08);border-radius:14px;padding:16px;margin-bottom:16px}');
-  L.push('.sec h2{font-size:16px;margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,.15);padding-bottom:8px}');
-  L.push('.chart-box{position:relative;height:280px;width:100%}');
-  L.push('.footer{text-align:center;font-size:11px;opacity:.5;padding:10px}');
-  L.push('@media(max-width:480px){.card .val{font-size:20px}.header h1{font-size:20px}.chart-box{height:220px}}');
-  L.push('</style></head><body><div class="wrap">');
-
-  // Header
-  L.push('<div class="header">');
-  L.push('<h1>&#127866; SAM MIX</h1>');
-  L.push('<div class="sub">Dashboard Co Dong - Bieu do real-time | ' + t.ngay + ' ' + t.gio + ' | ' + t.ca + '</div>');
-  L.push('<span class="badge">&#128994; LIVE - tu dong cap nhat 30s</span>');
-  L.push('</div>');
-
-  // 4 KPI cards
-  L.push('<div class="grid">');
-  L.push('<div class="card"><div class="label">Doanh thu</div><div class="val green">' + moneyFmt(tongDoanhThu) + '</div></div>');
-  L.push('<div class="card"><div class="label">Tien mat</div><div class="val yellow">' + moneyFmt(tongTienMat) + '</div></div>');
-  L.push('<div class="card"><div class="label">So don</div><div class="val blue">' + soDon + '</div></div>');
-  L.push('<div class="card"><div class="label">So mon</div><div class="val pink">' + soMon + '</div></div>');
-  L.push('</div>');
-
-  // Bieu do 1: Doanh thu theo gio hom nay (line)
-  L.push('<div class="sec"><h2>&#128200; Doanh thu theo gio - hom nay</h2><div class="chart-box"><canvas id="chGio"></canvas></div></div>');
-  // Bieu do 2: Doanh thu theo nhan vien (bar)
-  L.push('<div class="sec"><h2>&#128101; Quan ly nhan vien - doanh thu &amp; so don</h2><div class="chart-box"><canvas id="chNV"></canvas></div></div>');
-  // Bieu do 3: Doanh thu 7 ngay gan nhat (bar)
-  L.push('<div class="sec"><h2>&#128202; Doanh thu 7 ngay gan nhat</h2><div class="chart-box"><canvas id="ch7"></canvas></div></div>');
-
-  L.push('<div class="footer">SAM MIX Dashboard | Cap nhat luc ' + t.gio + ' | Tu dong lam moi moi 30 giay</div>');
-  L.push('</div>');
-
-  // ---- Du lieu JSON cho Chart.js ----
-  L.push('<script>');
-  L.push('var gioKeys = ' + JSON.stringify(gioKeys) + ';');
-  L.push('var gioVals = ' + JSON.stringify(gioVals) + ';');
-  L.push('var nvNames = ' + JSON.stringify(nvNames) + ';');
-  L.push('var nvVals = ' + JSON.stringify(nvVals) + ';');
-  L.push('var nvDonVals = ' + JSON.stringify(nvDonVals) + ';');
-  L.push('var ngayKeys = ' + JSON.stringify(ngayKeys) + ';');
-  L.push('var ngayVals = ' + JSON.stringify(ngayVals) + ';');
-  L.push('Chart.defaults.color = "#cfd8dc";');
-  L.push('Chart.defaults.borderColor = "rgba(255,255,255,.1)";');
-  L.push('function fmt(v){ return v.toLocaleString("vi-VN") + " d"; }');
-  L.push('new Chart(document.getElementById("chGio"), { type: "line", data: { labels: gioKeys, datasets: [{ label: "Doanh thu", data: gioVals, borderColor: "#69f0ae", backgroundColor: "rgba(105,240,174,.15)", fill: true, tension: .4, pointRadius: 4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: function(c){ return " " + fmt(c.parsed.y); } } } }, scales: { y: { ticks: { callback: function(v){ return (v/1000) + "k"; } } } } } });');
-  L.push('new Chart(document.getElementById("chNV"), { type: "bar", data: { labels: nvNames, datasets: [{ label: "Doanh thu", data: nvVals, backgroundColor: "#40c4ff", borderRadius: 6 }, { label: "So don", data: nvDonVals, backgroundColor: "#ffd740", borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: function(c){ return c.dataset.label + ": " + (c.dataset.label === "Doanh thu" ? fmt(c.parsed.y) : c.parsed.y + " don"); } } } }, scales: { y: { ticks: { callback: function(v){ return (v/1000) + "k"; } } } } } });');
-  L.push('new Chart(document.getElementById("ch7"), { type: "bar", data: { labels: ngayKeys, datasets: [{ label: "Doanh thu", data: ngayVals, backgroundColor: "#ff80ab", borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { callbacks: { label: function(c){ return " " + fmt(c.parsed.y); } } } }, scales: { y: { ticks: { callback: function(v){ return (v/1000) + "k"; } } } } } });');
-  L.push('</script>');
-  L.push('</body></html>');
-
-  return HtmlService.createHtmlOutput(L.join(String.fromCodePoint(0x0A))).setTitle('SAM MIX - Dashboard Co Dong');
-}
-function handleDeleteOrderSheet(data) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('Don hang');
-  var orderId = String(data.orderId || '').trim();
-  if (!sheet || !orderId) return jsonErr('Khong tim thay sheet hoac Ma don');
-
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return jsonOk('Sheet trong');
-
-  var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-  var deletedCount = 0;
-
-  // Xoa cac dong trung Ma don (duyet nguoc tu duoi len de khong lech index)
-  for (var i = ids.length - 1; i >= 0; i--) {
-    var idCell = String(ids[i][0] || '').trim();
-    if (idCell === orderId) {
-      sheet.deleteRow(i + 2);
-      deletedCount++;
-    }
-  }
-
-  if (deletedCount > 0) {
-    sendTelegram(String.fromCodePoint(0x1F5D1) + ' DA XOA DON HANG #' + orderId + ' tren Google Sheets');
-    return jsonOk('Da xoa don ' + orderId + ' (' + deletedCount + ' dong)');
-  }
-
-  return jsonOk('Khong tim thay don ' + orderId + ' tren Google Sheets');
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8">'
+           + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+           + '<title>' + STORE_NAME + '</title>'
+           + '<style>'
+           + 'body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f8fafc;padding:20px;text-align:center;margin:0}'
+           + '.card{max-width:480px;margin:20px auto;background:#1e293b;padding:24px;border-radius:16px;border:1px solid #334155;box-shadow:0 10px 25px rgba(0,0,0,0.3)}'
+           + 'h1{color:#f59e0b;font-size:1.4rem;margin-top:0}'
+           + '.btn{display:inline-block;padding:10px 20px;background:#10b981;color:#0f172a;text-decoration:none;border-radius:8px;font-weight:bold;margin-top:15px}'
+           + '</style></head><body>'
+           + '<div class="card">'
+           + '<h1>🍖 ' + STORE_NAME + '</h1>'
+           + '<p>Hệ thống kết nối Google Sheets & Web App đang hoạt động tốt!</p>'
+           + '<p style="color:#94a3b8;font-size:0.9rem">Hôm nay: ' + t.ngay + ' lúc ' + t.gio + '</p>'
+           + '<a class="btn" href="?action=data">Xem JSON Data</a>'
+           + '</div></body></html>';
+  return HtmlService.createHtmlOutput(html).setTitle(STORE_NAME);
 }

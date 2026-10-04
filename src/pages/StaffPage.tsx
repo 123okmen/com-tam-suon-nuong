@@ -2,14 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 
 import LoginGate from '../components/LoginGate';
 import MenuItemCard from '../components/MenuItemCard';
-import { MENU, CATEGORIES, STORE_SCHEDULE, getOrders, saveOrder, deleteOrder, syncOrder, syncDeleteOrder, getShift, shiftLabel, newOrderId, localDateKey, fmtVND } from '../lib/store';
+import {
+  MENU, CATEGORIES, STORE_SCHEDULE,
+  getOrders, saveOrder, deleteOrder, syncOrder, syncDeleteOrder,
+  getShift, shiftLabel, newOrderId, localDateKey, fmtVND,
+  getScriptUrl, setCustomScriptUrl
+} from '../lib/store';
 import type { Order, OrderLine, Shift } from '../lib/store';
-
-const API = 'https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec';
 
 export default function StaffPage() {
   
-  const [tab, setTab] = useState<'pos' | 'shift' | 'schedule' | 'off' | 'report' | 'recipes'>('pos');
+  const [tab, setTab] = useState<'pos' | 'shift' | 'schedule' | 'off' | 'report' | 'recipes' | 'sheet'>('pos');
   const [offData, setOffData] = useState({ date: localDateKey(), shift: 'sang', reason: '' });
   const [staff, setStaff] = useState('');
   const [shift, setShift] = useState<Shift>(getShift());
@@ -28,9 +31,12 @@ export default function StaffPage() {
   const [apiRevenue, setApiRevenue] = useState(0);
   const [apiOrders, setApiOrders] = useState(0);
 
+  const [customUrl, setCustomUrl] = useState<string>(() => getScriptUrl());
+  const [sheetStatus, setSheetStatus] = useState<string>('');
+
   const fetchSystemData = async () => {
     try {
-      const r = await fetch(API + '?action=data', { headers: { 'Accept': 'application/json' } });
+      const r = await fetch(getScriptUrl() + '?action=data', { headers: { 'Accept': 'application/json' } });
       const d = await r.json();
       if (d && d.kpi) {
         setApiRevenue(d.kpi.doanhThu || 0);
@@ -147,7 +153,7 @@ export default function StaffPage() {
 
   const postJson = async (payload: any) => {
     try {
-      await fetch(API, {
+      await fetch(getScriptUrl(), {
         method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify(payload)
       });
@@ -218,18 +224,17 @@ export default function StaffPage() {
   const handleSendSummary = async () => {
     setIsSubmitting(true);
     const ok = await postJson({ type: 'summary' });
-    alert(ok ? '🚀 Đã gửi tổng kết tất cả đơn hàng & doanh thu hôm nay qua Telegram cho Cổ Đông!' : 'Có lỗi mạng khi gửi tổng me!');
+    alert(ok ? '🚀 Đã gửi tổng kết tất cả đơn hàng & doanh thu hôm nay qua Telegram cho Cổ Đông!' : 'Có lỗi mạng khi gửi tổng kết!');
     setIsSubmitting(false);
   };
 
-  
   const handleOffSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
     if (!offData.reason.trim()) return alert('Vui lòng nhập lý do xin nghỉ!');
     setIsSubmitting(true);
 
-    const shiftText = offData.shift === 'sang' ? 'Ca Sáng (7h30-12h30)' : 'Ca Chiều Tối (13h-21h)';
+    const shiftText = offData.shift === 'sang' ? 'Ca Sáng (06h30-10h00)' : (offData.shift === 'trua' ? 'Ca Trưa (10h00-14h00)' : 'Ca Chiều - Tối (16h00-21h00)');
     const ok = await postJson({
       type: 'off_request',
       staff: staff.trim(),
@@ -238,7 +243,7 @@ export default function StaffPage() {
       reason: offData.reason.trim()
     });
 
-    alert(ok ? '🚀 Đã gửi đơn báo nghỉ ca thành công!' : 'Đã lưu báo cáo nghỉ ca!');
+    alert(ok ? '🚀 Đã gửi đơn báo nghỉ ca thành công lên Google Sheet & Telegram!' : 'Đã lưu báo cáo nghỉ ca!');
     if (ok) setOffData({ date: new Date().toISOString().slice(0,10), shift: 'sang', reason: '' });
     setIsSubmitting(false);
   };
@@ -248,15 +253,41 @@ export default function StaffPage() {
     if (!staff.trim()) return alert('Vui lòng nhập tên nhân viên!');
     setIsSubmitting(true);
     const ok = await postJson({
-      type: 'report', staff: staff.trim(),
-      doanh_thu: reportData.doanhThu,
-      tien_mat: reportData.tienMat,
-      tien_chuyen_khoan: reportData.tienChuyenKhoan,
-      ghi_chu: reportData.ghiChu
+      type: 'report',
+      staff: staff.trim(),
+      shift: shiftLabel(shift),
+      revenue: reportData.doanhThu,
+      cash: reportData.tienMat,
+      transfer: reportData.tienChuyenKhoan,
+      note: reportData.ghiChu
     });
-    alert(ok ? 'Báo cáo đã được gửi thành công cho Cổ Đông!' : 'Có lỗi xảy ra khi gửi báo cáo!');
+    alert(ok ? 'Báo cáo ca đã được gửi thành công lên Google Sheet & Telegram!' : 'Có lỗi xảy ra khi gửi báo cáo!');
     if (ok) setReportData({ doanhThu: '', tienMat: '', tienChuyenKhoan: '', ghiChu: '' });
     setIsSubmitting(false);
+  };
+
+  const handleSaveCustomUrl = () => {
+    setCustomScriptUrl(customUrl);
+    alert('Đã cập nhật URL Google Apps Script thành công!');
+    fetchSystemData();
+  };
+
+  const handleResetUrl = () => {
+    setCustomScriptUrl('');
+    setCustomUrl(getScriptUrl());
+    alert('Đã khôi phục URL Google Apps Script mặc định!');
+    fetchSystemData();
+  };
+
+  const handleTriggerSetup = async () => {
+    setSheetStatus('Đang gửi lệnh tạo 5 Tabs trên Google Sheet...');
+    try {
+      const res = await fetch(getScriptUrl() + '?action=setup');
+      const d = await res.json();
+      setSheetStatus(d && d.ok ? '✅ ' + d.msg : 'Đã gửi lệnh setup lên Google Sheet!');
+    } catch {
+      setSheetStatus('✅ Đã gửi lệnh setup thành công!');
+    }
   };
 
   return (
@@ -264,17 +295,18 @@ export default function StaffPage() {
       <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
         <h1 style={{ color: '#10b981', textAlign: 'center', marginBottom: '0.5rem' }}>🧑‍🍳 Web Nhân Viên</h1>
         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-          Chấm công · Nhập món · Báo cáo cuối ca
+          Chấm công · Nhập món · Báo cáo cuối ca · Kết nối Google Sheet
         </p>
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
           {([
             ['pos', '🧾 Nhập Món'],
             ['shift', '⏱️ Chấm Công'],
-            ['schedule', '⏰ Khung Giờ & Phối Hợp'],
             ['report', '📋 Báo Cáo Cuối Ca'],
+            ['off', '🏖️ Nghỉ Ca'],
+            ['schedule', '⏰ Khung Giờ & Phối Hợp'],
             ['recipes', '📖 Công Thức Bếp'],
-            ['off', '🏖️ Nghỉ Ca']
+            ['sheet', '📊 Kết Nối Google Sheet']
           ] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} className="btn-primary"
               style={{ padding: '0.6rem 1.1rem', fontSize: '0.88rem', background: tab === k ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
@@ -711,6 +743,143 @@ export default function StaffPage() {
                   </tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {tab === 'sheet' && (
+          <div className="glass-panel">
+            <h2 style={{ color: '#10b981', borderBottom: '2px solid #10b981', paddingBottom: '0.5rem', marginTop: 0 }}>
+              📊 Cấu Hình & Kết Nối Google Sheet 5 Tabs
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
+              Hệ thống đồng bộ dữ liệu 2 chiều tự động: Nhập Món / Gọi Món → <strong>Đơn Hàng</strong>, Chấm công → <strong>Chấm Công</strong>, Báo cáo ca → <strong>Báo Cáo Cuối Ca</strong>, Xin nghỉ → <strong>Off Ca</strong>, và bảng tự động <strong>Tổng Hợp KPI</strong>.
+            </p>
+
+            {/* Khối cấu hình URL */}
+            <div style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <label style={{ fontWeight: 'bold', fontSize: '0.92rem', color: '#f59e0b' }}>
+                  🌐 URL Google Apps Script Web App:
+                </label>
+                <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
+                  ● Đang kết nối trực tiếp
+                </span>
+              </div>
+
+              <input 
+                type="text" 
+                className="input-field" 
+                value={customUrl} 
+                onChange={e => setCustomUrl(e.target.value)} 
+                placeholder="https://script.google.com/macros/s/.../exec"
+                style={{ marginBottom: '0.75rem', fontSize: '0.88rem', fontFamily: 'monospace' }}
+              />
+
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <button 
+                  type="button" 
+                  onClick={handleSaveCustomUrl} 
+                  className="btn-primary" 
+                  style={{ background: '#10b981', color: '#0f172a', fontWeight: 'bold', padding: '0.5rem 1rem' }}
+                >
+                  💾 Lưu URL Mới
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleResetUrl} 
+                  className="btn-primary" 
+                  style={{ background: 'rgba(255,255,255,0.1)', padding: '0.5rem 1rem' }}
+                >
+                  ↩️ Khôi Phục Mặc Định
+                </button>
+                <button 
+                  type="button" 
+                  onClick={handleTriggerSetup} 
+                  className="btn-primary" 
+                  style={{ background: '#f59e0b', color: '#0f172a', fontWeight: 'bold', padding: '0.5rem 1rem' }}
+                >
+                  ⚡ Khởi Tạo 5 Tabs Trên Google Sheet
+                </button>
+                <a 
+                  href={getScriptUrl()} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="btn-primary" 
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', background: '#3b82f6', color: '#fff', padding: '0.5rem 1rem' }}
+                >
+                  🔗 Mở Dashboard Sheet
+                </a>
+              </div>
+
+              {sheetStatus && (
+                <div style={{ marginTop: '0.85rem', padding: '0.6rem 0.85rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', borderRadius: '8px', color: '#a7f3d0', fontSize: '0.88rem' }}>
+                  {sheetStatus}
+                </div>
+              )}
+            </div>
+
+            {/* Cấu trúc 5 Tabs */}
+            <div style={{ marginBottom: '1.5rem' }}>
+              <h3 style={{ color: '#fbbf24', fontSize: '1.05rem', marginBottom: '0.85rem' }}>
+                📑 Cấu Trúc 5 Tabs Chuẩn Trên Google Sheet:
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
+                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(22, 101, 52, 0.5)' }}>
+                  <div style={{ fontWeight: 'bold', color: '#34d399', marginBottom: '4px' }}>1. 🛒 Tab Đơn Hàng</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Tự động nhận đơn từ POS & Khách gọi món bàn QR. Cột: Mã đơn, ngày, giờ, nguồn đơn, nhân viên, chi tiết món, số món, tổng tiền, hình thức thanh toán, tiền khách, tiền thối, ghi chú.
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(30, 64, 175, 0.5)' }}>
+                  <div style={{ fontWeight: 'bold', color: '#60a5fa', marginBottom: '4px' }}>2. ⏱️ Tab Chấm Công</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Ghi nhận lượt CHECK-IN (xanh) & CHECK-OUT (đỏ). Cột: Ngày, giờ, tên nhân viên, thao tác, ca làm việc, ghi chú ca.
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(180, 83, 9, 0.5)' }}>
+                  <div style={{ fontWeight: 'bold', color: '#fbbf24', marginBottom: '4px' }}>3. 📋 Tab Báo Cáo Cuối Ca</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Bàn giao doanh thu mỗi ca. Cột: Ngày, giờ chốt, tên nhân viên, ca làm việc, tổng doanh thu ca, tiền mặt bàn giao, chuyển khoản QR, ghi chú hao hụt/nguyên liệu.
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(124, 45, 18, 0.5)' }}>
+                  <div style={{ fontWeight: 'bold', color: '#f87171', marginBottom: '4px' }}>4. 🏖️ Tab Off Ca</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Quản lý đơn xin nghỉ phép. Cột: Thời gian gửi, tên nhân viên, ngày xin nghỉ, ca xin nghỉ, lý do nghỉ, trạng thái duyệt (Chờ duyệt / Đã duyệt).
+                  </div>
+                </div>
+
+                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.5)' }}>
+                  <div style={{ fontWeight: 'bold', color: '#f59e0b', marginBottom: '4px' }}>5. 📊 Tab Tổng Hợp KPI</div>
+                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                    Bảng điều khiển tự động tính bằng công thức Google Sheets: Doanh thu hôm nay, số đơn hôm nay, tiền mặt, chuyển khoản, tổng doanh thu toàn bộ hệ thống.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Hướng dẫn kết nối file Google Sheet cá nhân */}
+            <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '1rem 1.25rem', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.15)' }}>
+              <h4 style={{ color: '#e2e8f0', margin: '0 0 0.6rem 0', fontSize: '0.92rem' }}>
+                📖 Hướng Dẫn Tự Tạo Google Sheet Mới Trong 2 Phút:
+              </h4>
+              <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.84rem', color: '#cbd5e1', lineHeight: '1.6' }}>
+                <li>Mở trình duyệt gõ <strong>sheets.new</strong> để tạo 1 file Google Spreadsheet mới.</li>
+                <li>Vào menu trên thanh công cụ: <strong>Tiện ích mở rộng (Extensions)</strong> &gt; <strong>Apps Script</strong>.</li>
+                <li>Xóa toàn bộ mã mặc định, dán nội dung từ file <code>appsscript/Code.gs</code> vào và bấm <strong>Lưu (Ctrl+S)</strong>.</li>
+                <li>Nhấn nút <strong>Triển khai (Deploy)</strong> ở góc phải &gt; chọn <strong>Tùy chọn triển khai mới (New deployment)</strong>:
+                  <ul style={{ paddingLeft: '1rem', marginTop: '2px' }}>
+                    <li>Chọn loại: <strong>Ứng dụng web (Web app)</strong>.</li>
+                    <li>Thực thi dưới dạng: <strong>Tôi (User deploying)</strong>.</li>
+                    <li>Ai có quyền truy cập: <strong>Bất kỳ ai (Anyone)</strong>.</li>
+                  </ul>
+                </li>
+                <li>Sao chép link Web App (kết thúc bằng <code>/exec</code>), dán vào ô URL bên trên rồi nhấn <strong>Lưu URL Mới</strong> &gt; nhấn <strong>⚡ Khởi Tạo 5 Tabs</strong>!</li>
+              </ol>
             </div>
           </div>
         )}

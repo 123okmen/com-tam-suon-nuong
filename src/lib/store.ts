@@ -190,10 +190,28 @@ export function newOrderId(): string {
   return 'DH' + Date.now().toString().slice(-8);
 }
 
+export function getScriptUrl(): string {
+  if (typeof window !== 'undefined') {
+    const custom = localStorage.getItem('custom_app_script_url');
+    if (custom && custom.startsWith('http')) return custom.trim();
+  }
+  return APP_SCRIPT_URL;
+}
+
+export function setCustomScriptUrl(url: string) {
+  if (typeof window !== 'undefined') {
+    if (!url.trim()) {
+      localStorage.removeItem('custom_app_script_url');
+    } else {
+      localStorage.setItem('custom_app_script_url', url.trim());
+    }
+  }
+}
+
 /** Gửi dữ liệu lên Apps Script. Lưu ý: mode 'no-cors' chỉ phát hiện được lỗi mạng, không đọc được phản hồi. */
-async function postToScript(payload: Record<string, unknown>): Promise<boolean> {
+export async function postToScript(payload: Record<string, unknown>): Promise<boolean> {
   try {
-    await fetch(APP_SCRIPT_URL, {
+    await fetch(getScriptUrl(), {
       method: 'POST',
       mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
