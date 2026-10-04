@@ -6,13 +6,13 @@ import {
   MENU, CATEGORIES, STORE_SCHEDULE,
   getOrders, saveOrder, deleteOrder, syncOrder, syncDeleteOrder,
   getShift, shiftLabel, newOrderId, localDateKey, fmtVND,
-  getScriptUrl, setCustomScriptUrl
+  getScriptUrl
 } from '../lib/store';
 import type { Order, OrderLine, Shift } from '../lib/store';
 
 export default function StaffPage() {
   
-  const [tab, setTab] = useState<'pos' | 'shift' | 'schedule' | 'off' | 'report' | 'recipes' | 'sheet'>('pos');
+  const [tab, setTab] = useState<'pos' | 'shift' | 'schedule' | 'off' | 'report'>('pos');
   const [offData, setOffData] = useState({ date: localDateKey(), shift: 'sang', reason: '' });
   const [staff, setStaff] = useState('');
   const [shift, setShift] = useState<Shift>(getShift());
@@ -30,9 +30,6 @@ export default function StaffPage() {
 
   const [apiRevenue, setApiRevenue] = useState(0);
   const [apiOrders, setApiOrders] = useState(0);
-
-  const [customUrl, setCustomUrl] = useState<string>(() => getScriptUrl());
-  const [sheetStatus, setSheetStatus] = useState<string>('');
 
   const fetchSystemData = async () => {
     try {
@@ -266,36 +263,12 @@ export default function StaffPage() {
     setIsSubmitting(false);
   };
 
-  const handleSaveCustomUrl = () => {
-    setCustomScriptUrl(customUrl);
-    alert('Đã cập nhật URL Google Apps Script thành công!');
-    fetchSystemData();
-  };
-
-  const handleResetUrl = () => {
-    setCustomScriptUrl('');
-    setCustomUrl(getScriptUrl());
-    alert('Đã khôi phục URL Google Apps Script mặc định!');
-    fetchSystemData();
-  };
-
-  const handleTriggerSetup = async () => {
-    setSheetStatus('Đang gửi lệnh tạo 5 Tabs trên Google Sheet...');
-    try {
-      const res = await fetch(getScriptUrl() + '?action=setup');
-      const d = await res.json();
-      setSheetStatus(d && d.ok ? '✅ ' + d.msg : 'Đã gửi lệnh setup lên Google Sheet!');
-    } catch {
-      setSheetStatus('✅ Đã gửi lệnh setup thành công!');
-    }
-  };
-
   return (
     <LoginGate expectedPassword="khoinghiep123" storageKey="auth_staff" title="Khu Vực Nhân Viên">
       <div style={{ padding: '2rem', maxWidth: '1200px', margin: '0 auto', color: 'var(--text-primary)' }}>
         <h1 style={{ color: '#10b981', textAlign: 'center', marginBottom: '0.5rem' }}>🧑‍🍳 Web Nhân Viên</h1>
         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
-          Chấm công · Nhập món · Báo cáo cuối ca · Kết nối Google Sheet
+          Chấm công · Nhập món · Báo cáo cuối ca · Lịch làm việc
         </p>
 
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
@@ -304,9 +277,7 @@ export default function StaffPage() {
             ['shift', '⏱️ Chấm Công'],
             ['report', '📋 Báo Cáo Cuối Ca'],
             ['off', '🏖️ Nghỉ Ca'],
-            ['schedule', '⏰ Khung Giờ & Phối Hợp'],
-            ['recipes', '📖 Công Thức Bếp'],
-            ['sheet', '📊 Kết Nối Google Sheet']
+            ['schedule', '⏰ Khung Giờ & Phối Hợp']
           ] as const).map(([k, label]) => (
             <button key={k} onClick={() => setTab(k)} className="btn-primary"
               style={{ padding: '0.6rem 1.1rem', fontSize: '0.88rem', background: tab === k ? '#1e7145' : 'rgba(255,255,255,0.1)' }}>
@@ -694,193 +665,6 @@ export default function StaffPage() {
                 {isSubmitting ? 'Đang gửi...' : 'Gửi Báo Cáo'}
               </button>
             </form>
-          </div>
-        )}
-        {tab === 'recipes' && (
-          <div className="glass-panel">
-            <h2 style={{ color: '#f59e0b', borderBottom: '2px solid #f59e0b', paddingBottom: '0.5rem', margin: '1rem 0' }}>
-              📖 Công Thức Chuẩn Bị Bếp — Cơm Tấm Sườn & Cơm Chiên
-            </h2>
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', background: 'rgba(255,255,255,0.92)', color: '#1e293b', borderRadius: '8px', overflow: 'hidden' }}>
-                <thead>
-                  <tr style={{ background: '#7c2d12', color: 'white' }}>
-                    <th style={{ padding: '10px', border: '1px solid #ddd' }}>Hạng mục</th>
-                    <th style={{ padding: '10px', border: '1px solid #ddd' }}>Định lượng chuẩn</th>
-                    <th style={{ padding: '10px', border: '1px solid #ddd' }}>Lưu ý kỹ thuật chế biến</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>1. Ướp Sườn Cốt Lết (10kg)</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Sả băm 400g, tỏi 200g, hành tím 200g, mật ong 150ml, sữa đặc 150g, nước mắm ngon 250ml, dầu hào 150ml, dầu điều 100ml, tiêu</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Dần mềm thớ thịt trước khi ướp ít nhất 4 tiếng. Nướng than hoa lửa vừa, quết dầu màu điều giữ sườn bóng mềm, không bị khô.</td>
-                  </tr>
-                  <tr style={{ background: '#f8fafc' }}>
-                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>2. Chả Trứng Hấp (Khay 20 phần)</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Thịt nạc vai xay 1kg, mộc nhĩ 80g, miến dong 80g, 10 quả trứng vịt (bớt 3 lòng đỏ), hành tím, hạt nêm, tiêu</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Hấp cách thủy 25 phút. Quét 3 lòng đỏ đánh đều với dầu màu điều lên mặt, mở nắp hấp thêm 5-7 phút cho mặt vàng đẹp.</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>3. Nước Mắm Kẹo Ăn Cơm Tấm</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>1 bát nước mắm ngon : 1 bát đường cát vàng : 1 bát nước dừa xiêm tươi, đun sôi lăn tăn cô lại, để nguội thêm tỏi ớt băm</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Nước mắm có độ sánh sệt, vị ngọt mặn hài hòa đặc trưng miền Nam. Tỏi ớt nổi đều lên mặt.</td>
-                  </tr>
-                  <tr style={{ background: '#f8fafc' }}>
-                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>4. Mỡ Hành & Tóp Mỡ</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Hành lá cắt nhỏ + 1 xíu muối, đường. Dầu ăn thật sôi hoặc mỡ heo nóng già dội trực tiếp vào bát hành</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Không đun hành trên bếp tránh úa vàng. Tóp mỡ thắng giòn rụm để riêng, khi chan cơm mới rắc lên giữ độ giòn.</td>
-                  </tr>
-                  <tr>
-                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>5. Đồ Chua Ăn Kèm</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Củ cải trắng và cà rốt bào sợi, bóp muối rửa sạch vắt ráo. Ngâm tỷ lệ 1 giấm : 1 đường : 2 nước</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Làm trước nửa ngày để ngấm giòn chua ngọt, khử mùi nồng của củ cải.</td>
-                  </tr>
-                  <tr style={{ background: '#f8fafc' }}>
-                    <td style={{ padding: '10px', border: '1px solid #ddd', fontWeight: 'bold', color: '#b45309' }}>6. Cơm Chiên Dưa Bò & Cơm Chiên</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Cơm nấu hơi khô để nguội trộn lòng đỏ trứng. Bắp bò thái mỏng ướp tỏi gừng xào dưa chua lửa lớn vừa chín tới</td>
-                    <td style={{ padding: '10px', border: '1px solid #ddd' }}>Chiên cơm trên chảo gang thật nóng cho hạt săn tơi giòn ngoài mềm trong. Trút dưa bò xào đảo nhanh tay, rắc hành ngò tiêu.</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {tab === 'sheet' && (
-          <div className="glass-panel">
-            <h2 style={{ color: '#10b981', borderBottom: '2px solid #10b981', paddingBottom: '0.5rem', marginTop: 0 }}>
-              📊 Cấu Hình & Kết Nối Google Sheet 5 Tabs
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-              Hệ thống đồng bộ dữ liệu 2 chiều tự động: Nhập Món / Gọi Món → <strong>Đơn Hàng</strong>, Chấm công → <strong>Chấm Công</strong>, Báo cáo ca → <strong>Báo Cáo Cuối Ca</strong>, Xin nghỉ → <strong>Off Ca</strong>, và bảng tự động <strong>Tổng Hợp KPI</strong>.
-            </p>
-
-            {/* Khối cấu hình URL */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.7)', padding: '1.25rem', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', marginBottom: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
-                <label style={{ fontWeight: 'bold', fontSize: '0.92rem', color: '#f59e0b' }}>
-                  🌐 URL Google Apps Script Web App:
-                </label>
-                <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
-                  ● Đang kết nối trực tiếp
-                </span>
-              </div>
-
-              <input 
-                type="text" 
-                className="input-field" 
-                value={customUrl} 
-                onChange={e => setCustomUrl(e.target.value)} 
-                placeholder="https://script.google.com/macros/s/.../exec"
-                style={{ marginBottom: '0.75rem', fontSize: '0.88rem', fontFamily: 'monospace' }}
-              />
-
-              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-                <button 
-                  type="button" 
-                  onClick={handleSaveCustomUrl} 
-                  className="btn-primary" 
-                  style={{ background: '#10b981', color: '#0f172a', fontWeight: 'bold', padding: '0.5rem 1rem' }}
-                >
-                  💾 Lưu URL Mới
-                </button>
-                <button 
-                  type="button" 
-                  onClick={handleResetUrl} 
-                  className="btn-primary" 
-                  style={{ background: 'rgba(255,255,255,0.1)', padding: '0.5rem 1rem' }}
-                >
-                  ↩️ Khôi Phục Mặc Định
-                </button>
-                <button 
-                  type="button" 
-                  onClick={handleTriggerSetup} 
-                  className="btn-primary" 
-                  style={{ background: '#f59e0b', color: '#0f172a', fontWeight: 'bold', padding: '0.5rem 1rem' }}
-                >
-                  ⚡ Khởi Tạo 5 Tabs Trên Google Sheet
-                </button>
-                <a 
-                  href={getScriptUrl()} 
-                  target="_blank" 
-                  rel="noreferrer" 
-                  className="btn-primary" 
-                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', background: '#3b82f6', color: '#fff', padding: '0.5rem 1rem' }}
-                >
-                  🔗 Mở Dashboard Sheet
-                </a>
-              </div>
-
-              {sheetStatus && (
-                <div style={{ marginTop: '0.85rem', padding: '0.6rem 0.85rem', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', borderRadius: '8px', color: '#a7f3d0', fontSize: '0.88rem' }}>
-                  {sheetStatus}
-                </div>
-              )}
-            </div>
-
-            {/* Cấu trúc 5 Tabs */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <h3 style={{ color: '#fbbf24', fontSize: '1.05rem', marginBottom: '0.85rem' }}>
-                📑 Cấu Trúc 5 Tabs Chuẩn Trên Google Sheet:
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.85rem' }}>
-                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(22, 101, 52, 0.5)' }}>
-                  <div style={{ fontWeight: 'bold', color: '#34d399', marginBottom: '4px' }}>1. 🛒 Tab Đơn Hàng</div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                    Tự động nhận đơn từ POS & Khách gọi món bàn QR. Cột: Mã đơn, ngày, giờ, nguồn đơn, nhân viên, chi tiết món, số món, tổng tiền, hình thức thanh toán, tiền khách, tiền thối, ghi chú.
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(30, 64, 175, 0.5)' }}>
-                  <div style={{ fontWeight: 'bold', color: '#60a5fa', marginBottom: '4px' }}>2. ⏱️ Tab Chấm Công</div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                    Ghi nhận lượt CHECK-IN (xanh) & CHECK-OUT (đỏ). Cột: Ngày, giờ, tên nhân viên, thao tác, ca làm việc, ghi chú ca.
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(180, 83, 9, 0.5)' }}>
-                  <div style={{ fontWeight: 'bold', color: '#fbbf24', marginBottom: '4px' }}>3. 📋 Tab Báo Cáo Cuối Ca</div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                    Bàn giao doanh thu mỗi ca. Cột: Ngày, giờ chốt, tên nhân viên, ca làm việc, tổng doanh thu ca, tiền mặt bàn giao, chuyển khoản QR, ghi chú hao hụt/nguyên liệu.
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(124, 45, 18, 0.5)' }}>
-                  <div style={{ fontWeight: 'bold', color: '#f87171', marginBottom: '4px' }}>4. 🏖️ Tab Off Ca</div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                    Quản lý đơn xin nghỉ phép. Cột: Thời gian gửi, tên nhân viên, ngày xin nghỉ, ca xin nghỉ, lý do nghỉ, trạng thái duyệt (Chờ duyệt / Đã duyệt).
-                  </div>
-                </div>
-
-                <div style={{ background: 'rgba(15, 23, 42, 0.5)', padding: '0.85rem', borderRadius: '10px', border: '1px solid rgba(245, 158, 11, 0.5)' }}>
-                  <div style={{ fontWeight: 'bold', color: '#f59e0b', marginBottom: '4px' }}>5. 📊 Tab Tổng Hợp KPI</div>
-                  <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
-                    Bảng điều khiển tự động tính bằng công thức Google Sheets: Doanh thu hôm nay, số đơn hôm nay, tiền mặt, chuyển khoản, tổng doanh thu toàn bộ hệ thống.
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Hướng dẫn kết nối file Google Sheet cá nhân */}
-            <div style={{ background: 'rgba(15, 23, 42, 0.4)', padding: '1rem 1.25rem', borderRadius: '12px', border: '1px dashed rgba(255,255,255,0.15)' }}>
-              <h4 style={{ color: '#e2e8f0', margin: '0 0 0.6rem 0', fontSize: '0.92rem' }}>
-                📖 Hướng Dẫn Tự Tạo Google Sheet Mới Trong 2 Phút:
-              </h4>
-              <ol style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.84rem', color: '#cbd5e1', lineHeight: '1.6' }}>
-                <li>Mở trình duyệt gõ <strong>sheets.new</strong> để tạo 1 file Google Spreadsheet mới.</li>
-                <li>Vào menu trên thanh công cụ: <strong>Tiện ích mở rộng (Extensions)</strong> &gt; <strong>Apps Script</strong>.</li>
-                <li>Xóa toàn bộ mã mặc định, dán nội dung từ file <code>appsscript/Code.gs</code> vào và bấm <strong>Lưu (Ctrl+S)</strong>.</li>
-                <li>Nhấn nút <strong>Triển khai (Deploy)</strong> ở góc phải &gt; chọn <strong>Tùy chọn triển khai mới (New deployment)</strong>:
-                  <ul style={{ paddingLeft: '1rem', marginTop: '2px' }}>
-                    <li>Chọn loại: <strong>Ứng dụng web (Web app)</strong>.</li>
-                    <li>Thực thi dưới dạng: <strong>Tôi (User deploying)</strong>.</li>
-                    <li>Ai có quyền truy cập: <strong>Bất kỳ ai (Anyone)</strong>.</li>
-                  </ul>
-                </li>
-                <li>Sao chép link Web App (kết thúc bằng <code>/exec</code>), dán vào ô URL bên trên rồi nhấn <strong>Lưu URL Mới</strong> &gt; nhấn <strong>⚡ Khởi Tạo 5 Tabs</strong>!</li>
-              </ol>
-            </div>
           </div>
         )}
       </div>
