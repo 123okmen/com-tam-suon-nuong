@@ -43,9 +43,17 @@ export default function StaffPage() {
     // Load local orders for shift calculation using shared store
     setRecentOrders(getOrders());
 
+    const handleSync = () => setRecentOrders(getOrders());
+    window.addEventListener('storage', handleSync);
+    window.addEventListener('comtam_orders_changed', handleSync);
+
     fetchSystemData();
     const t = setInterval(fetchSystemData, 15000);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('storage', handleSync);
+      window.removeEventListener('comtam_orders_changed', handleSync);
+    };
   }, []);
 
   const addItem = (id: string, name: string, price: number) => {

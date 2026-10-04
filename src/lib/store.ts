@@ -108,6 +108,7 @@ export const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyETg2znW
 
 /** Key localStorage dùng chung cho mọi trang (POS, Nhân viên, Gọi món). */
 export const ORDERS_KEY = 'comtam_orders_v1';
+export const ORDERS_CHANGED_EVENT = 'comtam_orders_changed';
 
 export function getOrders(): Order[] {
   try {
@@ -122,11 +123,67 @@ export function saveOrder(order: Order) {
   const orders = getOrders().filter(o => o.id !== order.id);
   orders.unshift(order);
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(ORDERS_CHANGED_EVENT, { detail: order }));
+  }
 }
 
 export function deleteOrder(orderId: string) {
   const orders = getOrders().filter(o => o.id !== orderId);
   localStorage.setItem(ORDERS_KEY, JSON.stringify(orders));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(ORDERS_CHANGED_EVENT, { detail: { id: orderId, deleted: true } }));
+  }
+}
+
+export interface RevenueSummary {
+  totalRevenue: number;
+  totalOrders: number;
+  cashRevenue: number;
+  bankRevenue: number;
+  appRevenue: number;
+}
+
+export function computeRevenueSummary(orders: Order[]): RevenueSummary {
+  let totalRevenue = 0;
+  let cashRevenue = 0;
+  let bankRevenue = 0;
+  let appRevenue = 0;
+
+  for (const o of orders) {
+    const amt = o.total || 0;
+    totalRevenue += amt;
+    if (o.paymentMethod === 'chuyenkhoan') {
+      bankRevenue += amt;
+    } else if (o.paymentMethod === 'app') {
+      appRevenue += amt;
+    } else {
+      cashRevenue += amt;
+    }
+  }
+
+  return {
+    totalRevenue,
+    totalOrders: orders.length,
+    cashRevenue,
+    bankRevenue,
+    appRevenue,
+  };
+}
+
+export function parseOrderDate(timeStr: string): Date {
+  if (!timeStr) return new Date();
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(timeStr)) {
+    const parts = timeStr.split(/[\/\s:]/);
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const year = parseInt(parts[2], 10);
+    const hour = parts[3] ? parseInt(parts[3], 10) : 0;
+    const min = parts[4] ? parseInt(parts[4], 10) : 0;
+    return new Date(year, month, day, hour, min);
+  }
+  const d = new Date(timeStr);
+  return isNaN(d.getTime()) ? new Date() : d;
 }
 
 export function newOrderId(): string {

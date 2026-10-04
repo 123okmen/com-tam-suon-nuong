@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import MenuItemCard from '../components/MenuItemCard';
 import {
   BRAND_NAME, BRAND_SUBTITLE, CATEGORIES, MENU,
-  getShift, newOrderId, syncTableOrder, fmtVND,
+  getShift, newOrderId, saveOrder, syncTableOrder, fmtVND,
 } from '../lib/store';
 import type { Category, MenuItem, Order, OrderLine, OrderType } from '../lib/store';
 import './TableOrderPage.css';
@@ -74,8 +74,10 @@ export default function TableOrderPage() {
       note: note.trim() || undefined,
       synced: false,
     };
+    saveOrder(order);
     const ok = await syncTableOrder(order);
     order.synced = ok;
+    saveOrder(order);
     setSending(false);
     setSendFailed(!ok);
     setSentOrder(order);
