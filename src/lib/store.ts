@@ -104,7 +104,7 @@ export interface Order {
   synced: boolean;
 }
 
-export const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1/exec";
+export const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby_SkofVPeAFIgoIwkC__eMzhRw6gHx932m78lRMFpYS-H_YveRF5AeJ3Gc0VbU4VgHDw/exec";
 
 /** Key localStorage dùng chung cho mọi trang (POS, Nhân viên, Gọi món). */
 export const ORDERS_KEY = 'comtam_orders_v1';
@@ -193,7 +193,11 @@ export function newOrderId(): string {
 export function getScriptUrl(): string {
   if (typeof window !== 'undefined') {
     const custom = localStorage.getItem('custom_app_script_url');
-    if (custom && custom.startsWith('http')) return custom.trim();
+    if (custom && custom.includes('AKfycbyETg2znWnDrNsgq3G2eB0IJxFeb_GdLKo5N68FkFlJVMvTzdt_M_C3YFzL7fcgiyY1')) {
+      localStorage.removeItem('custom_app_script_url');
+    } else if (custom && custom.startsWith('http')) {
+      return custom.trim();
+    }
   }
   return APP_SCRIPT_URL;
 }
