@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import MenuItemCard from '../components/MenuItemCard';
 import {
-  BRAND_NAME, BRAND_SUBTITLE, CATEGORIES, MENU,
+  CATEGORIES, MENU,
   getShift, newOrderId, saveOrder, syncTableOrder, fmtVND,
 } from '../lib/store';
 import type { Category, MenuItem, Order, OrderLine, OrderType } from '../lib/store';
@@ -134,15 +134,10 @@ export default function TableOrderPage() {
       <section className="tor-hero">
         <img
           className="tor-hero__img"
-          src={import.meta.env.BASE_URL + 'com_tam_suon.jpg'}
-          alt="Cơm tấm sườn nướng"
+          src={import.meta.env.BASE_URL + 'banner_gymer.png'}
+          alt="Cơm tấm sườn nướng Gymer"
           onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
         />
-        <div className="tor-hero__text">
-          <div className="tor-hero__brand">{BRAND_NAME}</div>
-          <h1>{BRAND_SUBTITLE}</h1>
-          <p>Sườn nướng than hồng · Cơm chiên nóng hổi · Gọi món ngay tại bàn</p>
-        </div>
       </section>
 
       <div className="tor-chips" role="tablist" aria-label="Danh mục món">

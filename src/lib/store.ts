@@ -102,9 +102,10 @@ export interface Order {
   change?: number;
   note?: string;
   synced: boolean;
+  source?: string;
 }
 
-export const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby_SkofVPeAFIgoIwkC__eMzhRw6gHx932m78lRMFpYS-H_YveRF5AeJ3Gc0VbU4VgHDw/exec";
+export const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby8rz7upff345Kvv_pK-AVdClBsUit68aUgj4Cl8bvPN6vmM8_i8NZpJe2VqxE6Mc4qZQ/exec";
 
 /** Key localStorage dùng chung cho mọi trang (POS, Nhân viên, Gọi món). */
 export const ORDERS_KEY = 'comtam_orders_v1';
@@ -294,4 +295,81 @@ export function fmtVND(n: number): string {
 export function fmtTime(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString('vi-VN');
+}
+
+export function cleanStr(s: string): string {
+  if (!s) return '';
+  return s.normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+export function findMenuPrice(name: string): number {
+  if (!name) return 0;
+  const cleanTarget = cleanStr(name);
+  let found = MENU.find(m => cleanStr(m.name) === cleanTarget);
+  if (found) return found.price;
+  found = MENU.find(m => cleanStr(m.name).includes(cleanTarget) || cleanTarget.includes(cleanStr(m.name)));
+  if (found) return found.price;
+  return 0;
+}
+
+export function parseOrderItems(rawInput?: string, orderTotal?: number): OrderLine[] {
+  if (!rawInput) return [];
+  let rawList = String(rawInput).split('\n').map(s => s.trim()).filter(Boolean);
+  if (rawList.length === 1 && rawList[0].includes(',')) {
+    rawList = rawList[0].split(',').map(s => s.trim()).filter(Boolean);
+  }
+
+  const result: OrderLine[] = [];
+  for (let i = 0; i < rawList.length; i++) {
+    const raw = rawList[i];
+    let name = raw;
+    let qty = 1;
+    let note: string | undefined = undefined;
+    let price = 0;
+
+    const match = raw.match(/^(.*?)(?:\s+[xX]\s*(\d+))(?:\s*\((.*?)\))?(?:\s*=\s*(.*))?$/);
+    if (match) {
+      name = match[1].trim();
+      qty = parseInt(match[2], 10) || 1;
+      note = match[3]?.trim();
+      if (match[4]) {
+        const subtotal = parseInt(match[4].replace(/[^\d]/g, ''), 10) || 0;
+        price = Math.round(subtotal / qty);
+      }
+    } else {
+      const match2 = raw.match(/^(.*?)(?:\s*\((.*?)\))?$/);
+      if (match2) {
+        name = match2[1].trim();
+        const paren = match2[2]?.trim();
+        if (paren && /\d+/.test(paren)) {
+          const num = parseInt(paren.replace(/[^\d]/g, ''), 10) || 0;
+          if (num > 1000) price = num;
+          else note = paren;
+        } else if (paren) {
+          note = paren;
+        }
+      }
+    }
+
+    if (price <= 0) {
+      price = findMenuPrice(name);
+    }
+
+    if (price <= 0 && orderTotal && rawList.length === 1) {
+      price = Math.round(Number(orderTotal) / qty);
+    }
+
+    result.push({
+      id: `item-${Date.now()}-${i}`,
+      name,
+      qty,
+      price,
+      note
+    });
+  }
+
+  return result;
 }

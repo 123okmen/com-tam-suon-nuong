@@ -6,7 +6,8 @@ import {
   fmtVND,
   ORDERS_CHANGED_EVENT,
   parseOrderDate,
-  getScriptUrl
+  getScriptUrl,
+  parseOrderItems
 } from '../lib/store';
 import type { Order, Shift } from '../lib/store';
 import './PlannerPage.css';
@@ -81,22 +82,55 @@ export default function PlannerPage() {
   }, []);
 
   // ----------------------------------------------------
+  // GỘP ĐƠN LOCAL VÀ ĐƠN TỪ ĐIỆN THOẠI (GOOGLE SHEETS)
+  // ----------------------------------------------------
+  const allMergedOrders = useMemo(() => {
+    const local = [...orders];
+    
+    if (apiData && Array.isArray(apiData.donHang)) {
+      const localIds = new Set(local.map(o => o.id));
+      
+      apiData.donHang.forEach((ao: any) => {
+        if (!localIds.has(ao.id) && ao.date) {
+          // Sử dụng định dạng DD/MM/YYYY HH:MM:SS để store.ts parse chính xác theo giờ VN
+          const timeStr = ao.time || '00:00:00';
+          const localTimeStr = `${ao.date} ${timeStr}`;
+
+          local.push({
+            id: ao.id,
+            time: localTimeStr,
+            staff: ao.staff || '',
+            shift: ao.shift as Shift || 'sang',
+            lines: parseOrderItems(ao.items, ao.total),
+            total: ao.total || 0,
+            paymentMethod: ao.paymentMethod === 'Chuyển khoản' ? 'chuyenkhoan' : (ao.paymentMethod === 'App' ? 'app' : 'tienmat'),
+            synced: true,
+            source: ao.source
+          });
+        }
+      });
+    }
+    return local;
+  }, [orders, apiData]);
+
+  // ----------------------------------------------------
   // 1. THANH TRÊN: TÍNH DOANH THU TRONG NGÀY (HÔM NAY)
   // ----------------------------------------------------
   const todayKey = localDateKey();
 
   const todayOrders = useMemo(() => {
-    return orders.filter(o => {
+    return allMergedOrders.filter(o => {
       const orderDate = parseOrderDate(o.time);
       return localDateKey(orderDate) === todayKey;
     });
-  }, [orders, todayKey]);
+  }, [allMergedOrders, todayKey]);
 
   const todayMetrics = useMemo(() => {
     let revenue = 0;
     let cash = 0;
     let bank = 0;
     let app = 0;
+    let orderCount = todayOrders.length;
 
     for (const o of todayOrders) {
       const total = o.total || 0;
@@ -110,14 +144,24 @@ export default function PlannerPage() {
       }
     }
 
+    // Nếu Google Sheets báo cáo KPI cao hơn local, ưu tiên dùng KPI của Google Sheets
+    if (apiData && apiData.kpi) {
+      if ((apiData.kpi.doanhThu || 0) > revenue) {
+        revenue = apiData.kpi.doanhThu || 0;
+        cash = apiData.kpi.tienMat || 0;
+        bank = apiData.kpi.tienChuyenKhoan || 0;
+        orderCount = apiData.kpi.soDon || orderCount;
+      }
+    }
+
     return {
       revenue,
-      orderCount: todayOrders.length,
+      orderCount,
       cash,
       bank,
       app
     };
-  }, [todayOrders]);
+  }, [todayOrders, apiData]);
 
   // Phân bổ theo 3 ca trong ngày
   const shiftBreakdown = useMemo(() => {
@@ -190,7 +234,7 @@ export default function PlannerPage() {
       const isCurToday = key === todayKey;
 
       // Tìm các đơn trong ngày này
-      const matchingOrders = orders.filter(o => localDateKey(parseOrderDate(o.time)) === key);
+      const matchingOrders = allMergedOrders.filter(o => localDateKey(parseOrderDate(o.time)) === key);
 
       let dTotal = 0;
       let dOrders = matchingOrders.length;
@@ -206,19 +250,34 @@ export default function PlannerPage() {
         else dCash += amt;
       }
 
-      // Nếu không có đơn local nhưng có dữ liệu từ Google Sheets baoCao
-      if (dTotal === 0 && apiData && Array.isArray(apiData.baoCao)) {
+      // Lấy dữ liệu từ Google Sheets baoCao (báo cáo kết ca)
+      if (apiData && Array.isArray(apiData.baoCao)) {
         const dStr = `${String(cur.getDate()).padStart(2, '0')}/${String(cur.getMonth() + 1).padStart(2, '0')}/${cur.getFullYear()}`;
         const sheetEntries = apiData.baoCao.filter((b: any) => b.ngay === dStr);
         if (sheetEntries.length > 0) {
+          let sheetTotal = 0;
+          let sheetCash = 0;
           for (const se of sheetEntries) {
-            const amt = Number(se.doanhThu) || 0;
-            const cAmt = Number(se.tienMat) || 0;
-            dTotal += amt;
-            dCash += cAmt;
-            dBank += Math.max(0, amt - cAmt);
-            dOrders += 1;
+            sheetTotal += Number(se.doanhThu) || 0;
+            sheetCash += Number(se.tienMat) || 0;
           }
+          // Nếu báo cáo chốt ca trên Sheets lớn hơn dữ liệu local (vì điện thoại nhập nhiều), ưu tiên lấy Sheets
+          if (sheetTotal > dTotal) {
+            dTotal = sheetTotal;
+            dCash = sheetCash;
+            dBank = Math.max(0, sheetTotal - sheetCash);
+            dOrders = Math.max(dOrders, sheetEntries.length * 10); // Ước chừng số đơn nếu không có
+          }
+        }
+      }
+
+      // Nếu là hôm nay, cập nhật thêm từ kpi realtime nếu kpi lớn hơn
+      if (isCurToday && apiData && apiData.kpi) {
+        if ((apiData.kpi.doanhThu || 0) > dTotal) {
+          dTotal = apiData.kpi.doanhThu || 0;
+          dCash = apiData.kpi.tienMat || 0;
+          dBank = apiData.kpi.tienChuyenKhoan || 0;
+          dOrders = apiData.kpi.soDon || dOrders;
         }
       }
 
@@ -293,7 +352,7 @@ export default function PlannerPage() {
       const displayDate = `${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}`;
       const isCurToday = key === todayKey;
 
-      const matchingOrders = orders.filter(o => localDateKey(parseOrderDate(o.time)) === key);
+      const matchingOrders = allMergedOrders.filter(o => localDateKey(parseOrderDate(o.time)) === key);
 
       let dTotal = 0;
       let dOrders = matchingOrders.length;
@@ -318,19 +377,33 @@ export default function PlannerPage() {
         }
       }
 
-      // Bổ sung dữ liệu lịch sử từ Google Sheets baoCao nếu có
-      if (dTotal === 0 && apiData && Array.isArray(apiData.baoCao)) {
+      // Bổ sung dữ liệu lịch sử từ Google Sheets baoCao (ưu tiên nếu lớn hơn local)
+      if (apiData && Array.isArray(apiData.baoCao)) {
         const dStr = `${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`;
         const sheetEntries = apiData.baoCao.filter((b: any) => b.ngay === dStr);
         if (sheetEntries.length > 0) {
+          let sheetTotal = 0;
+          let sheetCash = 0;
           for (const se of sheetEntries) {
-            const amt = Number(se.doanhThu) || 0;
-            const cAmt = Number(se.tienMat) || 0;
-            dTotal += amt;
-            dCash += cAmt;
-            dBank += Math.max(0, amt - cAmt);
-            dOrders += 1;
+            sheetTotal += Number(se.doanhThu) || 0;
+            sheetCash += Number(se.tienMat) || 0;
           }
+          if (sheetTotal > dTotal) {
+            dTotal = sheetTotal;
+            dCash = sheetCash;
+            dBank = Math.max(0, sheetTotal - sheetCash);
+            dOrders = Math.max(dOrders, sheetEntries.length * 10);
+          }
+        }
+      }
+
+      // Nếu là hôm nay, cập nhật thêm từ kpi realtime nếu kpi lớn hơn
+      if (isCurToday && apiData && apiData.kpi) {
+        if ((apiData.kpi.doanhThu || 0) > dTotal) {
+          dTotal = apiData.kpi.doanhThu || 0;
+          dCash = apiData.kpi.tienMat || 0;
+          dBank = apiData.kpi.tienChuyenKhoan || 0;
+          dOrders = apiData.kpi.soDon || dOrders;
         }
       }
 
@@ -940,6 +1013,7 @@ export default function PlannerPage() {
                       <th>Mã Đơn</th>
                       <th>Khách / Nhân Viên</th>
                       <th>Món Ăn</th>
+                      <th style={{ textAlign: 'center' }}>Nguồn Gốc</th>
                       <th style={{ textAlign: 'right' }}>Tổng Tiền</th>
                       <th style={{ textAlign: 'center' }}>Hình Thức TT</th>
                       <th style={{ textAlign: 'center' }}>Đồng Bộ</th>
@@ -949,6 +1023,16 @@ export default function PlannerPage() {
                     {todayOrders.map(o => {
                       const d = parseOrderDate(o.time);
                       const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                      
+                      // Xác định nguồn gốc
+                      let origin = o.source || '';
+                      if (!origin) {
+                        if (o.orderType === 'mang-ve') origin = '📦 Mang Về';
+                        else if (o.paymentMethod === 'app') origin = '🛵 App Onl (Grab/Shopee)';
+                        else if (o.tableNo) origin = '📱 QR Bàn';
+                        else origin = '💻 Tại Quầy';
+                      }
+
                       return (
                         <tr key={o.id}>
                           <td><strong>{timeStr}</strong></td>
@@ -957,7 +1041,12 @@ export default function PlannerPage() {
                             {o.tableNo ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>Bàn {o.tableNo}</span> : (o.staff || 'Khách')}
                           </td>
                           <td style={{ maxWidth: '300px' }}>
-                            {Array.isArray(o.lines) ? o.lines.map(l => `${l.name} x${l.qty}`).join(', ') : 'Chi tiết đơn'}
+                            {Array.isArray(o.lines) && o.lines.length > 0 ? o.lines.map(l => `${l.name} x${l.qty}`).join(', ') : ((o as any).items || 'Chi tiết đơn')}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span style={{ fontSize: '0.85rem', color: '#e2e8f0', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                              {origin}
+                            </span>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 800, color: '#fef08a' }}>
                             {fmtVND(o.total)}

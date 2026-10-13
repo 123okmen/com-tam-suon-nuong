@@ -4,5 +4,9 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/com-tam-suon-nuong/'
+  base: '/com-tam-suon-nuong/',
+  build: {
+    target: 'esnext',
+    cssCodeSplit: true
+  }
 })

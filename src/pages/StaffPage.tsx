@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 import LoginGate from '../components/LoginGate';
 import MenuItemCard from '../components/MenuItemCard';
@@ -6,9 +6,10 @@ import {
   MENU, CATEGORIES, STORE_SCHEDULE,
   getOrders, saveOrder, deleteOrder, syncOrder, syncDeleteOrder,
   getShift, shiftLabel, newOrderId, localDateKey, fmtVND,
-  getScriptUrl
+  getScriptUrl, findMenuPrice, parseOrderItems
 } from '../lib/store';
 import type { Order, OrderLine, Shift } from '../lib/store';
+import { printReceipt } from '../utils/print';
 
 export default function StaffPage() {
   
@@ -24,12 +25,59 @@ export default function StaffPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<"tienmat" | "chuyenkhoan" | "app">("tienmat");
+  const [orderType, setOrderType] = useState<"tai-quan" | "mang-ve">("tai-quan");
 
   const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
-  const [isPromo10k, setIsPromo10k] = useState<boolean>(false);
+
 
   const [apiRevenue, setApiRevenue] = useState(0);
   const [apiOrders, setApiOrders] = useState(0);
+
+  const [onlineOrders, setOnlineOrders] = useState<any[]>([]);
+  const seenOnlineOrders = useRef<Set<string>>(new Set());
+  const audioCtxRef = useRef<any>(null);
+
+  useEffect(() => {
+    const initAudio = () => {
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      if (audioCtxRef.current.state === 'suspended') {
+        audioCtxRef.current.resume();
+      }
+    };
+    window.addEventListener('click', initAudio);
+    window.addEventListener('touchstart', initAudio);
+    return () => {
+      window.removeEventListener('click', initAudio);
+      window.removeEventListener('touchstart', initAudio);
+    };
+  }, []);
+
+  const playDingDong = () => {
+    try {
+      const ctx = audioCtxRef.current || new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(880, ctx.currentTime);
+      gain1.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+      osc1.connect(gain1); gain1.connect(ctx.destination);
+      osc1.start(); osc1.stop(ctx.currentTime + 0.5);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(659.25, ctx.currentTime + 0.3);
+      gain2.gain.setValueAtTime(0.5, ctx.currentTime + 0.3);
+      gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.0);
+      osc2.connect(gain2); gain2.connect(ctx.destination);
+      osc2.start(ctx.currentTime + 0.3); osc2.stop(ctx.currentTime + 1.0);
+    } catch (e) {}
+  };
 
   const fetchSystemData = async () => {
     try {
@@ -38,6 +86,26 @@ export default function StaffPage() {
       if (d && d.kpi) {
         setApiRevenue(d.kpi.doanhThu || 0);
         setApiOrders(d.kpi.soDon || 0);
+      }
+      if (d && d.donHang) {
+        // Lọc ra các đơn hàng từ Bàn hoặc Mang về (không phải từ POS)
+        const dDate = new Date();
+        const today = `${dDate.getDate().toString().padStart(2, '0')}/${(dDate.getMonth() + 1).toString().padStart(2, '0')}/${dDate.getFullYear()}`;
+        const localIds = new Set(getOrders().map(o => o.id));
+        const newOnline = d.donHang.filter((o: any) => o.source && o.source !== 'POS Thu ngân' && o.date === today && !localIds.has(o.id));
+        
+        let hasNew = false;
+        newOnline.forEach((o: any) => {
+          if (!seenOnlineOrders.current.has(o.id)) {
+            hasNew = true;
+            seenOnlineOrders.current.add(o.id);
+          }
+        });
+        
+        if (hasNew) {
+          playDingDong();
+        }
+        setOnlineOrders(newOnline);
       }
     } catch {}
   };
@@ -72,9 +140,9 @@ export default function StaffPage() {
       return;
     }
 
-    const finalPrice = isPromo10k ? 10000 : price;
-    const itemKey = isPromo10k ? id + '_10k' : id;
-    const itemName = isPromo10k ? name + ' (Khai Trương 10K)' : name;
+    const finalPrice = price;
+    const itemKey = id;
+    const itemName = name;
     setCart(prev => {
       const found = prev.find(l => l.id === itemKey);
       if (found) return prev.map(l => l.id === itemKey ? { ...l, qty: l.qty + 1 } : l);
@@ -95,10 +163,14 @@ export default function StaffPage() {
     if (!staff.trim()) { alert('Vui lòng nhập tên nhân viên bán hàng!'); return; }
     if (cart.length === 0) { alert('Chưa có món nào trong đơn!'); return; }
     const orderId = editingOrderId || newOrderId();
+    const originalOrder = editingOrderId ? recentOrders.find(o => o.id === editingOrderId) : undefined;
     const order: Order = {
       paymentMethod,
+      orderType,
       id: orderId,
-      time: new Date().toISOString(),
+      time: originalOrder?.time || new Date().toISOString(),
+      tableNo: originalOrder?.tableNo,
+      source: originalOrder?.source,
       staff: staff.trim(),
       shift,
       lines: cart,
@@ -110,14 +182,69 @@ export default function StaffPage() {
     const ok = await syncOrder(order);
     order.synced = ok;
     saveOrder(order);
+    const wasEditing = Boolean(editingOrderId);
     setCart([]);
     setCash('');
-    setToast(ok ? (editingOrderId ? 'ĐÃ CẬP NHẬT ĐƠN!' : 'ĐÃ LƯU ĐƠN!') : 'LỖI MẠNG - ĐÃ LƯU CỤC BỘ');
+    setOrderType('tai-quan');
+    setPaymentMethod('tienmat');
+    setToast(ok ? (wasEditing ? 'ĐÃ CẬP NHẬT ĐƠN HÀNG THÀNH CÔNG!' : 'ĐÃ LƯU ĐƠN!') : 'LỖI MẠNG - ĐÃ LƯU CỤC BỘ');
     setRecentOrders(getOrders());
     setEditingOrderId(null);
     if (ok) {
       setTimeout(fetchSystemData, 1500);
     }
+    setTimeout(() => setToast(''), 4000);
+    
+    // In bill sau khi tạo đơn hoặc vừa sửa cập nhật xong
+    printReceipt(order);
+  };
+
+  const handleConfirmOnlineOrder = async (o: any) => {
+    if (!staff.trim()) { alert('Vui lòng nhập tên nhân viên (Thu ngân) trước khi xác nhận đơn!'); return; }
+    
+    let lines: OrderLine[] = [];
+    if (Array.isArray(o.lines) && o.lines.length > 0) {
+      lines = o.lines;
+    } else if (o.items) {
+      lines = parseOrderItems(o.items, o.total);
+    }
+
+    if (lines.length === 0 && o.total > 0) {
+      lines = [{
+        id: `ol-${Date.now()}`,
+        name: o.items || `Món ăn bàn ${o.source || ''}`,
+        price: Number(o.total),
+        qty: 1
+      }];
+    }
+    
+    const tableNum = o.source ? o.source.replace('Bàn ', '').trim() : '';
+
+    const newOrder: Order = {
+      paymentMethod: o.paymentMethod === 'Chuyển khoản' ? 'chuyenkhoan' : 'tienmat',
+      id: o.id, // Giữ nguyên ID của khách
+      time: new Date().toISOString(),
+      tableNo: parseInt(tableNum, 10) || undefined,
+      orderType: 'tai-quan',
+      source: o.source || (tableNum ? `Bàn ${tableNum}` : '📱 QR Bàn'),
+      staff: staff.trim(),
+      shift,
+      lines: lines,
+      total: o.total,
+      synced: false
+    };
+    
+    // Đẩy vào sheet "Don hang" để tính doanh thu chính thức
+    setToast('Đang xử lý đơn từ bàn...');
+    const ok = await syncOrder(newOrder);
+    newOrder.synced = ok;
+    saveOrder(newOrder);
+    
+    setRecentOrders(getOrders());
+    printReceipt(newOrder);
+    
+    setOnlineOrders(prev => prev.filter(x => x.id !== o.id));
+    setToast('Đã xác nhận & In Bill đơn từ bàn!');
     setTimeout(() => setToast(''), 4000);
   };
 
@@ -140,11 +267,50 @@ export default function StaffPage() {
     }
   };
 
-  const editOrder = (o: Order) => {
+  const editOrder = (o: Order | any) => {
     setEditingOrderId(o.id);
-    setPaymentMethod(o.paymentMethod || 'tienmat');
-    setCart(o.lines || []);
+    if (o.orderType) setOrderType(o.orderType);
+    if (o.paymentMethod) setPaymentMethod(o.paymentMethod);
+    if (o.staff && !staff) setStaff(o.staff);
     if (o.cash) setCash(o.cash.toString());
+
+    // Phục hồi chi tiết món ăn (lines) thông minh, cam kết KHÔNG BAO GIỜ bị 0đ hay mất số tiền
+    let resolvedLines: OrderLine[] = [];
+    if (Array.isArray(o.lines) && o.lines.length > 0) {
+      resolvedLines = o.lines.map((l: any, idx: number) => {
+        let p = Number(l.price) || 0;
+        const q = Number(l.qty) || 1;
+        if (p <= 0 && l.name) {
+          p = findMenuPrice(l.name);
+        }
+        if (p <= 0 && o.total && o.lines.length === 1) {
+          p = Math.round(Number(o.total) / q);
+        }
+        return {
+          id: l.id || `line-${Date.now()}-${idx}`,
+          name: l.name || 'Món ăn',
+          price: p,
+          qty: q,
+          note: l.note
+        };
+      });
+    }
+
+    if (resolvedLines.length === 0 && o.items) {
+      resolvedLines = parseOrderItems(o.items, o.total);
+    }
+
+    // Nếu vẫn rỗng nhưng đơn có tổng tiền > 0:
+    if (resolvedLines.length === 0 && o.total > 0) {
+      resolvedLines = [{
+        id: `custom-${Date.now()}`,
+        name: o.items || `Đơn hàng #${o.id}`,
+        price: Number(o.total),
+        qty: 1
+      }];
+    }
+
+    setCart(resolvedLines);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -310,39 +476,29 @@ export default function StaffPage() {
         </div>
 
         {tab === 'pos' && (<>
-          {/* Toggle Khai Trương 10K */}
-          <div className="glass-panel" style={{
-            marginBottom: '1.2rem', padding: '0.8rem 1.2rem', display: 'flex', alignItems: 'center',
-            justifyContent: 'space-between', background: isPromo10k ? 'linear-gradient(90deg, #d35400 0%, #e67e22 100%)' : 'rgba(255,255,255,0.06)',
-            borderRadius: '14px', border: isPromo10k ? '1px solid #f39c12' : '1px solid var(--glass-border)',
-            transition: 'all 0.3s ease', cursor: 'pointer'
-          }} onClick={() => setIsPromo10k(!isPromo10k)}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '1.4rem' }}>🎉</span>
-              <div>
-                <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#fff' }}>
-                  Chế độ Khai Trương Đồng Giá 10K {isPromo10k ? ' (ĐANG BẬT 🔥)' : ''}
-                </div>
-                <div style={{ fontSize: '0.8rem', color: isPromo10k ? '#ffeaa7' : 'var(--text-secondary)' }}>
-                  {isPromo10k ? 'Tất cả các món khi chọn sẽ áp dụng giá ưu đãi 10.000đ / phần' : 'Gạt công tắc để áp dụng giá 10k cho tất cả các món'}
-                </div>
+
+          
+          {onlineOrders.length > 0 && (
+            <div className="glass-panel" style={{ marginBottom: '1.5rem', padding: '1rem', border: '2px solid #e74c3c', background: 'rgba(231, 76, 60, 0.1)' }}>
+              <h2 style={{ marginTop: 0, color: '#e74c3c', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="blink">🔔</span> CÓ ĐƠN HÀNG MỚI TỪ KHÁCH GỌI TẠI BÀN!
+              </h2>
+              <div style={{ display: 'grid', gap: '10px' }}>
+                {onlineOrders.map(o => (
+                  <div key={o.id} style={{ padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#f1c40f' }}>{o.source} <span style={{ fontSize: '0.8rem', color: '#ccc' }}>({o.time})</span></div>
+                      <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.9rem', margin: '4px 0' }}>{o.items}</div>
+                      <div style={{ fontWeight: 'bold', color: '#10b981' }}>Tổng: {fmtVND(o.total)} - {o.paymentMethod}</div>
+                    </div>
+                    <button className="btn-primary" style={{ background: '#27ae60', padding: '10px 15px', fontWeight: 'bold' }} onClick={() => handleConfirmOnlineOrder(o)}>
+                      ✅ NHẬN ĐƠN & IN BILL
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={isPromo10k} onChange={e => setIsPromo10k(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                <span style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-                  backgroundColor: isPromo10k ? '#2ecc71' : '#ccc', borderRadius: '34px', transition: '.4s'
-                }}>
-                  <span style={{
-                    position: 'absolute', content: '', height: '18px', width: '18px',
-                    left: isPromo10k ? '26px' : '4px', bottom: '4px', backgroundColor: 'white', borderRadius: '50%', transition: '.4s'
-                  }} />
-                </span>
-              </label>
-            </div>
-          </div>
+          )}
 
           <div className="order-layout">
             <div>
@@ -357,8 +513,7 @@ export default function StaffPage() {
                         key={item.id}
                         item={item}
                         onAdd={(it) => addItem(it.id, it.name, it.price)}
-                        overridePrice={isPromo10k ? 10000 : undefined}
-                        qtyInCart={qtyById[isPromo10k ? item.id + '_10k' : item.id] || 0}
+                        qtyInCart={qtyById[item.id] || 0}
                       />
                     ))}
                   </div>
@@ -381,7 +536,23 @@ export default function StaffPage() {
             </div>
 
             <div className="glass-panel order-layout__cart">
-              <h2 style={{ marginTop: 0, color: '#f39c12' }}>🛒 Đơn hàng hiện tại</h2>
+              {editingOrderId ? (
+                <div style={{ background: '#f59e0b', color: '#0f172a', padding: '10px 12px', borderRadius: '8px', marginBottom: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 12px rgba(245,158,11,0.3)' }}>
+                  <div>
+                    <div style={{ fontWeight: 900, fontSize: '0.95rem' }}>✏️ ĐANG CHỈNH SỬA #{editingOrderId}</div>
+                    <div style={{ fontSize: '0.78rem', marginTop: '2px', opacity: 0.9 }}>Thay đổi món hoặc số lượng rồi bấm Lưu</div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => { setEditingOrderId(null); setCart([]); setCash(''); }}
+                    style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                  >
+                    ✖ Hủy sửa
+                  </button>
+                </div>
+              ) : (
+                <h2 style={{ marginTop: 0, color: '#f39c12' }}>🛒 Đơn hàng hiện tại</h2>
+              )}
               {cart.length === 0 ? (
                 <p style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '1.5rem 0' }}>
                   Bấm vào món để thêm vào đơn
@@ -392,7 +563,26 @@ export default function StaffPage() {
                     <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', padding: '8px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{l.name}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{fmtVND(l.price)}</div>
+                        <div style={{ fontSize: '0.8rem', color: l.price === 0 ? '#ef4444' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{fmtVND(l.price)}</span>
+                          {l.price === 0 && (
+                            <button 
+                              type="button" 
+                              style={{ fontSize: '0.72rem', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '4px', padding: '1px 6px', cursor: 'pointer' }}
+                              onClick={() => {
+                                const p = prompt(`Nhập đơn giá cho món "${l.name}":`, '30000');
+                                if (p) {
+                                  const val = parseInt(p.replace(/\D/g, ''), 10);
+                                  if (val > 0) {
+                                    setCart(prev => prev.map(item => item.id === l.id ? { ...item, price: val } : item));
+                                  }
+                                }
+                              }}
+                            >
+                              ⚙️ Nhập giá
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <button className="qty-btn" onClick={() => changeQty(l.id, -1)}>−</button>
                       <span style={{ minWidth: '28px', textAlign: 'center', fontWeight: 'bold' }}>{l.qty}</span>
@@ -415,13 +605,27 @@ export default function StaffPage() {
                         </strong>
                       </div>
                     )}
-                    <button className="btn-primary" style={{ width: '100%', marginTop: '12px', background: '#1e7145', fontSize: '1.05rem' }}
+                    <button className="btn-primary" style={{ width: '100%', marginTop: '12px', background: editingOrderId ? '#d97706' : '#1e7145', fontSize: '1.05rem', fontWeight: 'bold' }}
                       onClick={checkout}>
-                      💾 Xác Nhận Đơn Hàng
+                      {editingOrderId ? '💾 Lưu Cập Nhật Đơn Hàng' : '💾 Xác Nhận Đơn Hàng'}
                     </button>
                   </div>
                 </>
               )}
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '6px' }}>Loại đơn hàng</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button type="button" onClick={() => setOrderType('tai-quan')}
+                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: orderType === 'tai-quan' ? '2px solid #f39c12' : '1px solid gray', background: orderType === 'tai-quan' ? 'rgba(243, 156, 18, 0.2)' : 'transparent', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                    🍽️ Tại chỗ
+                  </button>
+                  <button type="button" onClick={() => setOrderType('mang-ve')}
+                    style={{ flex: 1, padding: '8px', borderRadius: '8px', border: orderType === 'mang-ve' ? '2px solid #e67e22' : '1px solid gray', background: orderType === 'mang-ve' ? 'rgba(230, 126, 34, 0.2)' : 'transparent', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                    📦 Mang về
+                  </button>
+                </div>
+              </div>
+
               <div style={{ marginBottom: '1rem' }}>
                 <label style={{ fontSize: '0.85rem', display: 'block', marginBottom: '6px' }}>Hình thức thanh toán</label>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -441,6 +645,61 @@ export default function StaffPage() {
                   {toast}
                 </div>
               )}
+
+              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--glass-border)' }}>
+                <div style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center', 
+                  flexWrap: 'wrap', 
+                  gap: '8px', 
+                  background: 'rgba(16, 185, 129, 0.1)', 
+                  border: '1px solid #10b981', 
+                  borderRadius: '8px', 
+                  padding: '10px 14px' 
+                }}>
+                  <div>
+                    <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>🖨️</span> <span>Khổ in: 58mm Bluetooth (Mặc định)</span>
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      Chuẩn UTF-8 · Hỗ trợ in cả iPhone, Android & Máy tính (EG-58BT)
+                    </div>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      printReceipt({
+                        id: 'TEST-58MM',
+                        time: new Date().toISOString(),
+                        tableNo: 1,
+                        orderType: 'tai-quan',
+                        staff: staff.trim() || 'Thu ngân',
+                        shift,
+                        lines: [
+                          { id: 'test-1', name: 'Cơm Tấm Sườn Bì Chả', price: 40000, qty: 1, note: 'Ít mỡ' },
+                          { id: 'test-2', name: 'Trà đá', price: 5000, qty: 1 }
+                        ],
+                        total: 45000,
+                        paymentMethod: 'tienmat',
+                        synced: true
+                      });
+                    }}
+                    style={{ 
+                      background: '#10b981', 
+                      color: '#0f172a', 
+                      border: 'none', 
+                      borderRadius: '6px', 
+                      padding: '6px 14px', 
+                      fontSize: '0.82rem', 
+                      fontWeight: 'bold', 
+                      cursor: 'pointer' 
+                    }}
+                  >
+                    🖨️ In thử bill 58mm
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -455,17 +714,32 @@ export default function StaffPage() {
                     <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
                       <th style={{ padding: '8px' }}>Mã đơn</th>
                       <th style={{ padding: '8px' }}>Món</th>
+                      <th style={{ padding: '8px' }}>Nguồn gốc</th>
                       <th style={{ padding: '8px' }}>Thanh toán</th>
                       <th style={{ padding: '8px', textAlign: 'right' }}>Tổng tiền</th>
                       <th style={{ padding: '8px', textAlign: 'center' }}>Thao tác</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {recentOrders.map(o => (
+                    {recentOrders.map(o => {
+                      let origin = o.source || '';
+                      if (!origin) {
+                        if (o.orderType === 'mang-ve') origin = '📦 Mang Về';
+                        else if (o.paymentMethod === 'app') origin = '🛵 App Onl (Grab/Shopee)';
+                        else if (o.tableNo) origin = '📱 QR Bàn';
+                        else origin = '💻 Tại Quầy';
+                      }
+
+                      return (
                       <tr key={o.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                         <td style={{ padding: '8px', fontWeight: 'bold' }}>{o.id}</td>
                         <td style={{ padding: '8px' }}>
-                          {o.lines ? o.lines.map((i: any) => i.name + ' x' + i.qty).join(', ') : ''}
+                          {o.lines && o.lines.length > 0 ? o.lines.map((i: any) => i.name + ' x' + i.qty).join(', ') : ((o as any).items || '')}
+                        </td>
+                        <td style={{ padding: '8px' }}>
+                          <span style={{ fontSize: '0.8rem', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                            {origin}
+                          </span>
                         </td>
                         <td style={{ padding: '8px' }}>
                           {o.paymentMethod === 'app' ? '🛵 App Online' : o.paymentMethod === 'chuyenkhoan' ? '💳 Chuyển khoản' : '💵 Tiền mặt'}
@@ -479,6 +753,10 @@ export default function StaffPage() {
                               onClick={() => editOrder(o)}>
                               ✏️ Sửa
                             </button>
+                            <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.8rem', background: '#9b59b6' }}
+                              onClick={() => printReceipt(o)}>
+                              🖨️ In
+                            </button>
                             <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.8rem', background: '#e74c3c' }}
                               onClick={() => handleDeleteOrder(o.id)}>
                               🗑️ Xóa
@@ -486,7 +764,7 @@ export default function StaffPage() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>

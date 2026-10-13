@@ -143,8 +143,7 @@ function handleOrder(data, type) {
   if (data.shift === 'trua') caTxt = 'Ca Trưa (10h00-14h00)';
   else if (data.shift === 'chieu-toi') caTxt = 'Ca Chiều - Tối (16h00-21h00)';
 
-  // Ghi đơn vào sheet TRƯỚC TIÊN (đảm bảo không bao giờ bị mất đơn)
-  sheet.appendRow([
+  var rowData = [
     orderId,
     dateStr,
     timeStr,
@@ -158,7 +157,28 @@ function handleOrder(data, type) {
     num(data.cash),
     num(data.change),
     data.note || ''
-  ]);
+  ];
+
+  // Tìm xem đơn hàng đã tồn tại chưa (nếu là Sửa đơn)
+  var existingRow = -1;
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) {
+    var ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = ids.length - 1; i >= 0; i--) {
+      if (String(ids[i][0]).trim() === orderId) {
+        existingRow = i + 2;
+        break; // Lấy dòng mới nhất nếu bị trùng
+      }
+    }
+  }
+
+  if (existingRow > -1) {
+    // Cập nhật lại dòng cũ thay vì thêm mới
+    sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
+  } else {
+    // Ghi đơn mới
+    sheet.appendRow(rowData);
+  }
 
   // Định dạng an toàn (bọc try-catch để nếu Google Sheets hạn chế format thì không crash)
   try {

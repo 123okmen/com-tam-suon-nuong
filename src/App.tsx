@@ -29,12 +29,15 @@ export default function App() {
     window.location.hash = '#/' + tab;
   };
 
+  const isKioskMode = window.location.hash.includes('ban=') || window.location.search.includes('ban=') || window.location.hash.includes('kiosk=');
+
   return (
     <div className="app-container">
-      <header className="app-header" style={{ background: '#0f172a', borderBottom: '2px solid #f59e0b', position: 'sticky', top: 0, zIndex: 100 }}>
-        <div className="header-content" style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', gap: '0.75rem' }}>
-          <div className="brand" onClick={() => changeTab('order')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span className="brand-icon" style={{ fontSize: '1.6rem' }}>🍖</span>
+      {!isKioskMode && (
+        <header className="app-header" style={{ background: '#0a0a0a', borderBottom: '3px solid #e31837', position: 'sticky', top: 0, zIndex: 100 }}>
+          <div className="header-content" style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', gap: '0.75rem' }}>
+            <div className="brand" onClick={() => changeTab('order')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span className="brand-icon" style={{ fontSize: '1.6rem' }}>🥩</span>
             <div>
               <div className="brand-title" style={{ color: '#f59e0b', fontWeight: '900', fontSize: '1.25rem', letterSpacing: '0.5px', lineHeight: '1.1' }}>TRẠM KHỞI NGHIỆP</div>
               <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600 }}>Cơm Tấm Sườn Nướng & Cơm Chiên</div>
@@ -92,6 +95,7 @@ export default function App() {
           </nav>
         </div>
       </header>
+      )}
 
       <main className="app-main">
         {activeTab === 'order' && <TableOrderPage />}

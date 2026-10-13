@@ -1,25 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Montserrat:wght@400;600;800&display=swap');
+
 :root {
-  --bg-color: #0f172a;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --accent-color: #10b981;
-  --accent-hover: #059669;
-  --glass-bg: rgba(30, 41, 59, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.1);
+  --bg-color: #050505;
+  --text-primary: #ffffff;
+  --text-secondary: #aaaaaa;
+  --accent-color: #e31837;
+  --accent-hover: #b91026;
+  --accent-yellow: #f1c40f;
+  --glass-bg: rgba(20, 20, 20, 0.85);
+  --glass-border: rgba(227, 24, 55, 0.3);
 }
 
 body {
   margin: 0;
   padding: 0;
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Montserrat', system-ui, sans-serif;
   background: var(--bg-color);
   background-image: 
-    radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.15), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.15), transparent 25%);
+    radial-gradient(circle at 10% 20%, rgba(227, 24, 55, 0.15), transparent 30%),
+    radial-gradient(circle at 90% 80%, rgba(241, 196, 15, 0.08), transparent 30%);
   color: var(--text-primary);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, .title, .btn-primary {
+  font-family: 'Oswald', sans-serif;
+  text-transform: uppercase;
 }
 
 #root {
@@ -30,21 +38,22 @@ body {
 
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  padding: 2rem;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  padding: 1.5rem;
+  box-shadow: 0 8px 32px rgba(227, 24, 55, 0.05);
+  border-top: 2px solid var(--accent-color);
 }
 
 .input-field {
   width: 100%;
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(0, 0, 0, 0.7);
   border: 1px solid var(--glass-border);
   color: var(--text-primary);
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 1rem;
   font-family: inherit;
   transition: all 0.3s ease;
@@ -54,7 +63,7 @@ body {
 .input-field:focus {
   outline: none;
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 0 0 2px rgba(227, 24, 55, 0.25);
 }
 
 .btn-primary {
@@ -62,20 +71,22 @@ body {
   color: white;
   border: none;
   padding: 0.8rem 1.5rem;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
+  border-radius: 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 1px;
   cursor: pointer;
   transition: all 0.3s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-bottom: 3px solid #900a20;
 }
 
 .btn-primary:hover {
   background: var(--accent-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  transform: translateY(1px);
+  border-bottom-width: 2px;
 }
 
 .btn-primary:disabled {
@@ -122,3 +133,5 @@ body {
   max-width: 500px;
   width: 90%;
 }
+
+@keyframes blinker { 50% { opacity: 0; } } .blink { animation: blinker 1s linear infinite; }
