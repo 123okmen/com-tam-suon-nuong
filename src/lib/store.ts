@@ -137,6 +137,13 @@ export function deleteOrder(orderId: string) {
   }
 }
 
+export function clearAllOrders() {
+  localStorage.removeItem(ORDERS_KEY);
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(ORDERS_CHANGED_EVENT, { detail: { cleared: true } }));
+  }
+}
+
 export interface RevenueSummary {
   totalRevenue: number;
   totalOrders: number;

@@ -16,6 +16,8 @@ function onOpen() {
       .addItem('⚡ Khởi tạo / Định dạng 5 Tabs Chuẩn', 'setupAllSheets')
       .addItem('📊 Cập nhật Công thức Tổng Hợp KPI', 'setupKpiDashboard')
       .addItem('📢 Gửi Tổng Kết Hôm Nay qua Telegram', 'sendTodaySummaryTelegram')
+      .addSeparator()
+      .addItem('🧹 Xóa Sạch Dữ Liệu Test (Reset Sạch 100%)', 'menuResetAllData')
       .addToUi();
   } catch (e) {
     Logger.log('onOpen error: ' + e);
@@ -44,6 +46,7 @@ function doPost(e) {
     if (type === 'off_request' || type === 'off') return handleOffRequest(data);
     if (type === 'delete_order') return handleDeleteOrder(data);
     if (type === 'summary') return handleSummary(data);
+    if (type === 'reset' || type === 'reset_all' || type === 'clear_all_data') return handleResetAllData();
 
     return jsonOk('Đã nhận dữ liệu POST nhưng chưa có handler cho: ' + type);
   } catch (err) {
@@ -54,24 +57,29 @@ function doPost(e) {
 
 // ================= XỬ LÝ GET (API DATA, TEST & SETUP) =================
 function doGet(e) {
-  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
+  try {
+    var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
 
-  if (action === 'data') return apiRealtimeData();
-  if (action === 'setup') return apiSetupSheets();
-  if (action === 'orders') return apiRecentOrders();
-  if (action === 'test') {
-    return handleOrder({
-      orderId: 'TEST_' + Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'HHmmss'),
-      staff: 'Kiểm Tra Kết Nối',
-      total: 35000,
-      paymentMethod: 'tienmat',
-      items: 'Cơm Tấm Sườn Nướng x1'
-    }, 'order');
+    if (action === 'data') return apiRealtimeData();
+    if (action === 'setup') return apiSetupSheets();
+    if (action === 'orders') return apiRecentOrders();
+    if (action === 'test') {
+      return handleOrder({
+        orderId: 'TEST_' + Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'HHmmss'),
+        staff: 'Kiểm Tra Kết Nối',
+        total: 35000,
+        paymentMethod: 'tienmat',
+        items: 'Cơm Tấm Sườn Nướng x1'
+      }, 'order');
+    }
+    if (action === 'reset' || action === 'clear') return handleResetAllData();
+
+    // Mặc định: Dashboard HTML trực tiếp
+    return renderLiveDashboard();
+  } catch (err) {
+    Logger.log('doGet error: ' + err);
+    return jsonErr('Lỗi máy chủ Apps Script: ' + err.toString());
   }
-  if (action === 'reset') return handleResetAllData();
-
-  // Mặc định: Dashboard HTML trực tiếp
-  return renderLiveDashboard();
 }
 
 // ================= 1. XỬ LÝ ĐƠN HÀNG (NHẬP MÓN & TẠI BÀN) =================
@@ -702,17 +710,48 @@ function sendTodaySummaryTelegram() {
   sendTelegram(msg);
 }
 
-function handleResetAllData() {
-  setupAllSheets();
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var names = ['Đơn Hàng', 'Chấm Công', 'Báo Cáo Cuối Ca', 'Off Ca'];
-  for (var i = 0; i < names.length; i++) {
-    var s = findSheet(ss, names[i], [names[i].toLowerCase()]);
-    if (s && s.getLastRow() > 1) {
-      s.getRange(2, 1, s.getLastRow() - 1, s.getLastColumn()).clearContent();
+function menuResetAllData() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    var ans = ui.alert('Xác nhận xóa dữ liệu test', 'Bạn có chắc chắn muốn xóa sạch toàn bộ đơn hàng, chấm công, báo cáo ca và đơn xin nghỉ để chuẩn bị cho bán hàng thật không?\n(Dòng tiêu đề và định dạng 5 tabs sẽ được giữ nguyên 100%)', ui.ButtonSet.YES_NO);
+    if (ans === ui.Button.YES) {
+      handleResetAllData();
+      ui.alert('Thành công', 'Đã dọn dẹp sạch toàn bộ dữ liệu test trên 4 bảng! Sẵn sàng kinh doanh.', ui.ButtonSet.OK);
     }
+  } catch (e) {
+    Logger.log('menuResetAllData error: ' + e);
   }
-  return jsonOk('Đã xóa dữ liệu test trên 4 tabs, giữ nguyên header chuẩn!');
+}
+
+function handleResetAllData() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var names = ['Đơn Hàng', 'Chấm Công', 'Báo Cáo Cuối Ca', 'Off Ca'];
+    var clearedSheets = [];
+
+    for (var i = 0; i < names.length; i++) {
+      var s = findSheet(ss, names[i], [names[i].toLowerCase()]);
+      if (s) {
+        var lastRow = s.getLastRow();
+        var lastCol = s.getLastColumn();
+        if (lastRow > 1 && lastCol > 0) {
+          s.getRange(2, 1, lastRow - 1, lastCol).clearContent();
+          clearedSheets.push(names[i]);
+        }
+      }
+    }
+
+    try {
+      setupKpiDashboard();
+    } catch (kpiErr) {
+      Logger.log('setupKpiDashboard in reset error: ' + kpiErr);
+    }
+
+    return jsonOk('Đã xóa dữ liệu test trên: ' + (clearedSheets.join(', ') || 'các sheet') + ', giữ nguyên header chuẩn!');
+  } catch (err) {
+    Logger.log('handleResetAllData error: ' + err);
+    return jsonErr('Lỗi khi xóa dữ liệu test: ' + err.toString());
+  }
 }
 
 function renderLiveDashboard() {

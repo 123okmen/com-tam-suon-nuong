@@ -4,7 +4,7 @@ import LoginGate from '../components/LoginGate';
 import MenuItemCard from '../components/MenuItemCard';
 import {
   MENU, CATEGORIES, STORE_SCHEDULE,
-  getOrders, saveOrder, deleteOrder, syncOrder, syncDeleteOrder,
+  getOrders, saveOrder, deleteOrder, clearAllOrders, syncOrder, syncDeleteOrder,
   getShift, shiftLabel, newOrderId, localDateKey, fmtVND,
   getScriptUrl, findMenuPrice, parseOrderItems
 } from '../lib/store';
@@ -704,7 +704,34 @@ export default function StaffPage() {
           </div>
 
           <div className="glass-panel" style={{ marginTop: '1.5rem', padding: '1.2rem' }}>
-            <h3 style={{ marginTop: 0, color: '#f39c12' }}>📜 Danh sách đơn hàng vừa nhập (Ấn Sửa để nạp lại đơn)</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+              <h3 style={{ margin: 0, color: '#f39c12' }}>📜 Danh sách đơn hàng vừa nhập (Ấn Sửa để nạp lại đơn)</h3>
+              {recentOrders.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm('Bạn có muốn xóa sạch danh sách đơn hàng đã lưu trên thiết bị này không? (Dành cho sau khi test xong để bắt đầu bán thật)')) {
+                      clearAllOrders();
+                      setRecentOrders([]);
+                      setToast('ĐÃ XÓA SẠCH DANH SÁCH ĐƠN TEST TRÊN MÁY NÀY!');
+                      setTimeout(() => setToast(''), 3000);
+                    }
+                  }}
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    border: '1px solid #ef4444',
+                    color: '#fca5a5',
+                    borderRadius: '6px',
+                    padding: '5px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer'
+                  }}
+                >
+                  🧹 Xóa đơn test trên máy này
+                </button>
+              )}
+            </div>
             {recentOrders.length === 0 ? (
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Chưa có đơn hàng nào được lưu thiết bị này.</p>
             ) : (
