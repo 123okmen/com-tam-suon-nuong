@@ -513,7 +513,21 @@ export default function PlannerPage() {
             </div>
           </div>
 
-          {/* Card 2: Số đơn hàng trong ngày */}
+          {/* Card 2: Doanh thu trong tháng */}
+          <div className="rpt-card rpt-card-month">
+            <div className="rpt-card-label">
+              <span>📅 Doanh Thu Trong Tháng</span>
+              <span>THÁNG {new Date().getMonth() + 1}</span>
+            </div>
+            <div className="rpt-card-value">
+              {fmtVND(Math.max(monthData.monthRevenue, apiData?.kpi?.doanhThuThang || 0))}
+            </div>
+            <div className="rpt-card-sub">
+              <span>{Math.max(monthData.monthOrders, apiData?.kpi?.soDonThang || 0)} đơn toàn tháng</span>
+            </div>
+          </div>
+
+          {/* Card 3: Số đơn hàng trong ngày */}
           <div className="rpt-card rpt-card-orders">
             <div className="rpt-card-label">
               <span>📦 Số Đơn Hàng</span>

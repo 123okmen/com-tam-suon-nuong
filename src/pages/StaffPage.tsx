@@ -32,6 +32,8 @@ export default function StaffPage() {
 
   const [apiRevenue, setApiRevenue] = useState(0);
   const [apiOrders, setApiOrders] = useState(0);
+  const [apiMonthRevenue, setApiMonthRevenue] = useState(0);
+  const [apiMonthOrders, setApiMonthOrders] = useState(0);
 
   const [onlineOrders, setOnlineOrders] = useState<any[]>([]);
   const seenOnlineOrders = useRef<Set<string>>(new Set());
@@ -86,6 +88,8 @@ export default function StaffPage() {
       if (d && d.kpi) {
         setApiRevenue(d.kpi.doanhThu || 0);
         setApiOrders(d.kpi.soDon || 0);
+        setApiMonthRevenue(d.kpi.doanhThuThang || 0);
+        setApiMonthOrders(d.kpi.soDonThang || 0);
       }
       if (d && d.donHang) {
         // Lọc ra các đơn hàng từ Bàn hoặc Mang về (không phải từ POS)
@@ -468,10 +472,17 @@ export default function StaffPage() {
               <option value="chieu-toi" style={{ background: '#222' }}>🌆 Ca Chiều - Tối (16h00 - 21h00)</option>
             </select>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Doanh thu hôm nay</div>
-            <div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#10b981' }}>{fmtVND(apiRevenue)}</div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{apiOrders} đơn (từ hệ thống)</div>
+          <div style={{ textAlign: 'right', display: 'flex', gap: '1.2rem', alignItems: 'center', marginLeft: 'auto', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Hôm nay</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#10b981' }}>{fmtVND(apiRevenue)}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{apiOrders} đơn</div>
+            </div>
+            <div style={{ borderLeft: '1px solid rgba(255,255,255,0.15)', paddingLeft: '1.2rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#38bdf8' }}>Tháng này</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#38bdf8' }}>{fmtVND(apiMonthRevenue)}</div>
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{apiMonthOrders} đơn</div>
+            </div>
           </div>
         </div>
 

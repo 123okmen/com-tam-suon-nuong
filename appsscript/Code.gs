@@ -409,6 +409,7 @@ function setupKpiDashboard() {
     sheet.clear();
     sheet.setTabColor('#f59e0b');
 
+    // Tiêu đề bảng điều khiển
     sheet.getRange('A1:F1').merge()
       .setValue('🍖 TRẠM KHỞI NGHIỆP – BẢNG ĐIỀU KHIỂN DOANH THU & KPI TỰ ĐỘNG')
       .setBackground('#0f172a').setFontColor('#f59e0b')
@@ -416,41 +417,65 @@ function setupKpiDashboard() {
       .setHorizontalAlignment('center').setVerticalAlignment('middle');
     sheet.setRowHeight(1, 40);
 
+    var dhName = (ss.getSheetByName('Đơn Hàng')) ? "'Đơn Hàng'" : "'Don hang'";
+
+    // 1. CHỈ SỐ HÔM NAY (REAL-TIME)
     sheet.getRange('A3:F3').merge().setValue('📌 CHỈ SỐ HÔM NAY (REAL-TIME)').setFontWeight('bold').setBackground('#f1f5f9').setFontColor('#0f172a');
     
     sheet.getRange('A4').setValue('Chỉ số').setFontWeight('bold');
     sheet.getRange('B4').setValue('Giá trị').setFontWeight('bold');
-    sheet.getRange('C4').setValue('Nguồn').setFontWeight('bold');
-
-    var dhName = (ss.getSheetByName('Đơn Hàng')) ? "'Đơn Hàng'" : "'Don hang'";
+    sheet.getRange('C4').setValue('Ghi chú nguồn').setFontWeight('bold');
 
     sheet.getRange('A5').setValue('Doanh Thu Hôm Nay:');
     sheet.getRange('B5').setFormula('=IFERROR(SUMIFS(' + dhName + '!I:I, ' + dhName + '!B:B, TEXT(TODAY(), "dd/mm/yyyy")), 0)').setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontSize(12).setFontColor('#166534');
-    sheet.getRange('C5').setValue('Tổng tiền hôm nay');
+    sheet.getRange('C5').setValue('Tổng tiền các đơn bán trong ngày');
 
     sheet.getRange('A6').setValue('Số Đơn Hàng Hôm Nay:');
     sheet.getRange('B6').setFormula('=IFERROR(COUNTIF(' + dhName + '!B:B, TEXT(TODAY(), "dd/mm/yyyy")), 0)').setFontWeight('bold');
-    sheet.getRange('C6').setValue('Số đơn hôm nay');
+    sheet.getRange('C6').setValue('Số lượt đơn bán hôm nay');
 
     sheet.getRange('A7').setValue('Tiền Mặt Hôm Nay:');
     sheet.getRange('B7').setFormula('=IFERROR(SUMIFS(' + dhName + '!I:I, ' + dhName + '!B:B, TEXT(TODAY(), "dd/mm/yyyy"), ' + dhName + '!J:J, "*Tiền mặt*"), 0)').setNumberFormat('#,##0" đ"');
-    sheet.getRange('C7').setValue('Tiền mặt');
+    sheet.getRange('C7').setValue('Tiền mặt thu tại quầy');
 
     sheet.getRange('A8').setValue('Chuyển Khoản Hôm Nay:');
     sheet.getRange('B8').setFormula('=IFERROR(SUMIFS(' + dhName + '!I:I, ' + dhName + '!B:B, TEXT(TODAY(), "dd/mm/yyyy"), ' + dhName + '!J:J, "*Chuyển khoản*"), 0)').setNumberFormat('#,##0" đ"');
-    sheet.getRange('C8').setValue('Chuyển khoản QR');
+    sheet.getRange('C8').setValue('Quét mã QR ngân hàng');
 
-    sheet.getRange('A10:F10').merge().setValue('📈 TỔNG QUAN HỆ THỐNG').setFontWeight('bold').setBackground('#f1f5f9').setFontColor('#0f172a');
+    // 2. CHỈ SỐ TRONG THÁNG (MONTHLY REVENUE & METRICS)
+    var curMonthText = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'MM/yyyy');
+    sheet.getRange('A10:F10').merge().setValue('📅 CHỈ SỐ TRONG THÁNG (THÁNG ' + curMonthText + ')').setFontWeight('bold').setBackground('#e0f2fe').setFontColor('#0369a1');
 
-    sheet.getRange('A11').setValue('Tổng Doanh Thu:');
-    sheet.getRange('B11').setFormula('=IFERROR(SUM(' + dhName + '!I2:I), 0)').setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontColor('#b45309');
+    sheet.getRange('A11').setValue('Doanh Thu Trong Tháng:');
+    sheet.getRange('B11').setFormula('=IFERROR(SUMIFS(' + dhName + '!I:I, ' + dhName + '!B:B, "*" & TEXT(TODAY(), "mm/yyyy")), 0)').setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontSize(12).setFontColor('#0284c7');
+    sheet.getRange('C11').setValue('Tổng doanh thu cả tháng ' + curMonthText);
 
-    sheet.getRange('A12').setValue('Tổng Số Đơn:');
-    sheet.getRange('B12').setFormula('=IFERROR(COUNTA(' + dhName + '!A2:A), 0)').setFontWeight('bold');
+    sheet.getRange('A12').setValue('Số Đơn Trong Tháng:');
+    sheet.getRange('B12').setFormula('=IFERROR(COUNTIF(' + dhName + '!B:B, "*" & TEXT(TODAY(), "mm/yyyy")), 0)').setFontWeight('bold');
+    sheet.getRange('C12').setValue('Tổng số đơn bán trong tháng');
 
-    sheet.setColumnWidth(1, 200);
-    sheet.setColumnWidth(2, 180);
-    sheet.setColumnWidth(3, 260);
+    sheet.getRange('A13').setValue('Tiền Mặt Trong Tháng:');
+    sheet.getRange('B13').setFormula('=IFERROR(SUMIFS(' + dhName + '!I:I, ' + dhName + '!B:B, "*" & TEXT(TODAY(), "mm/yyyy"), ' + dhName + '!J:J, "*Tiền mặt*"), 0)').setNumberFormat('#,##0" đ"');
+    sheet.getRange('C13').setValue('Tổng tiền mặt trong tháng');
+
+    sheet.getRange('A14').setValue('Chuyển Khoản Trong Tháng:');
+    sheet.getRange('B14').setFormula('=IFERROR(SUMIFS(' + dhName + '!I:I, ' + dhName + '!B:B, "*" & TEXT(TODAY(), "mm/yyyy"), ' + dhName + '!J:J, "*Chuyển khoản*"), 0)').setNumberFormat('#,##0" đ"');
+    sheet.getRange('C14').setValue('Tổng tiền chuyển khoản trong tháng');
+
+    // 3. TỔNG QUAN HỆ THỐNG (TÍCH LŨY TỪ TRƯỚC ĐẾN NAY)
+    sheet.getRange('A16:F16').merge().setValue('📈 TỔNG QUAN TÍCH LŨY (TỪ TRƯỚC ĐẾN NAY)').setFontWeight('bold').setBackground('#fef3c7').setFontColor('#92400e');
+
+    sheet.getRange('A17').setValue('Tổng Doanh Thu Tích Lũy:');
+    sheet.getRange('B17').setFormula('=IFERROR(SUM(' + dhName + '!I2:I), 0)').setNumberFormat('#,##0" đ"').setFontWeight('bold').setFontColor('#b45309');
+    sheet.getRange('C17').setValue('Toàn bộ doanh thu từ ngày bắt đầu');
+
+    sheet.getRange('A18').setValue('Tổng Số Đơn Tích Lũy:');
+    sheet.getRange('B18').setFormula('=IFERROR(COUNTA(' + dhName + '!A2:A), 0)').setFontWeight('bold');
+    sheet.getRange('C18').setValue('Toàn bộ đơn hàng đã ghi nhận');
+
+    sheet.setColumnWidth(1, 230);
+    sheet.setColumnWidth(2, 200);
+    sheet.setColumnWidth(3, 280);
   } catch (kpiErr) {
     Logger.log('KPI setup error: ' + kpiErr);
   }
@@ -464,12 +489,14 @@ function apiRealtimeData() {
   var t = nowParts();
 
   var tongDoanhThu = 0, tongTienMat = 0, tongChuyenKhoan = 0, soDon = 0, soMon = 0;
+  var doanhThuThang = 0, soDonThang = 0, tienMatThang = 0, tienChuyenKhoanThang = 0;
   var recentOrders = [];
   var baoCaoList = [];
+  var curMonth = Utilities.formatDate(new Date(), 'Asia/Ho_Chi_Minh', 'MM/yyyy');
 
   var dh = findSheet(ss, 'Đơn Hàng', ['Don hang', 'Đơn hàng']);
   if (dh && dh.getLastRow() > 1) {
-    var maxRows = Math.min(dh.getLastRow() - 1, 200);
+    var maxRows = Math.min(dh.getLastRow() - 1, 300);
     var startRow = Math.max(2, dh.getLastRow() - maxRows + 1);
     var numRows = dh.getLastRow() - startRow + 1;
     var dvals = dh.getRange(startRow, 1, numRows, dh.getLastColumn()).getValues();
@@ -482,6 +509,7 @@ function apiRealtimeData() {
       var total = num(row[8]);
       var pt = String(row[9] || '');
 
+      // 1. Chỉ số hôm nay
       if (ngay === t.ngay) {
         soDon++;
         tongDoanhThu += total;
@@ -490,6 +518,18 @@ function apiRealtimeData() {
           tongChuyenKhoan += total;
         } else {
           tongTienMat += total;
+        }
+      }
+
+      // 2. Chỉ số trong tháng
+      var rowMonth = ngay.length >= 7 ? ngay.slice(-7) : '';
+      if (rowMonth === curMonth) {
+        doanhThuThang += total;
+        soDonThang++;
+        if (pt.toLowerCase().indexOf('chuyen') >= 0 || pt.toLowerCase().indexOf('ck') >= 0) {
+          tienChuyenKhoanThang += total;
+        } else {
+          tienMatThang += total;
         }
       }
 
@@ -538,7 +578,12 @@ function apiRealtimeData() {
       tienMat: tongTienMat,
       tienChuyenKhoan: tongChuyenKhoan,
       soDon: soDon,
-      soMon: soMon
+      soMon: soMon,
+      doanhThuThang: doanhThuThang,
+      soDonThang: soDonThang,
+      tienMatThang: tienMatThang,
+      tienChuyenKhoanThang: tienChuyenKhoanThang,
+      thang: curMonth
     },
     donHang: recentOrders,
     baoCao: baoCaoList
@@ -703,10 +748,12 @@ function sendTodaySummaryTelegram() {
   var msg = '📊 TỔNG KẾT DOANH THU HÔM NAY (' + t.ngay + ')\n'
           + '⏰ Cập nhật lúc: ' + t.gio + '\n'
           + '-----------------------------\n'
-          + '💰 TỔNG THU: ' + moneyFmt(k.doanhThu) + '\n'
-          + '📦 SỐ ĐƠN: ' + k.soDon + ' đơn (' + k.soMon + ' phần)\n'
+          + '💰 DOANH THU HÔM NAY: ' + moneyFmt(k.doanhThu) + '\n'
+          + '📦 SỐ ĐƠN HÔM NAY: ' + k.soDon + ' đơn (' + k.soMon + ' phần)\n'
           + '💵 TIỀN MẶT: ' + moneyFmt(k.tienMat) + '\n'
-          + '💳 CHUYỂN KHOẢN: ' + moneyFmt(k.tienChuyenKhoan);
+          + '💳 CHUYỂN KHOẢN: ' + moneyFmt(k.tienChuyenKhoan) + '\n'
+          + '-----------------------------\n'
+          + '📅 DOANH THU THÁNG (' + (k.thang || '') + '): ' + moneyFmt(k.doanhThuThang || 0) + ' (' + (k.soDonThang || 0) + ' đơn)';
   sendTelegram(msg);
 }
 
