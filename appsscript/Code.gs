@@ -514,7 +514,8 @@ function apiRealtimeData() {
         soDon++;
         tongDoanhThu += total;
         soMon += num(row[7]);
-        if (pt.toLowerCase().indexOf('chuyen') >= 0 || pt.toLowerCase().indexOf('ck') >= 0) {
+        var ptClean = cleanStr(pt);
+        if (ptClean.indexOf('chuyen') >= 0 || ptClean.indexOf('ck') >= 0 || ptClean.indexOf('bank') >= 0 || ptClean.indexOf('qr') >= 0) {
           tongChuyenKhoan += total;
         } else {
           tongTienMat += total;
@@ -526,7 +527,8 @@ function apiRealtimeData() {
       if (rowMonth === curMonth) {
         doanhThuThang += total;
         soDonThang++;
-        if (pt.toLowerCase().indexOf('chuyen') >= 0 || pt.toLowerCase().indexOf('ck') >= 0) {
+        var ptCleanThang = cleanStr(pt);
+        if (ptCleanThang.indexOf('chuyen') >= 0 || ptCleanThang.indexOf('ck') >= 0 || ptCleanThang.indexOf('bank') >= 0 || ptCleanThang.indexOf('qr') >= 0) {
           tienChuyenKhoanThang += total;
         } else {
           tienMatThang += total;

@@ -6,7 +6,8 @@ import {
   MENU, CATEGORIES, STORE_SCHEDULE,
   getOrders, saveOrder, deleteOrder, clearAllOrders, syncOrder, syncDeleteOrder,
   getShift, shiftLabel, newOrderId, localDateKey, fmtVND,
-  getScriptUrl, findMenuPrice, parseOrderItems
+  getScriptUrl, findMenuPrice, parseOrderItems,
+  normalizePaymentMethod, normalizeShift, parseOrderDate
 } from '../lib/store';
 import type { Order, OrderLine, Shift } from '../lib/store';
 import { printReceipt } from '../utils/print';
@@ -225,7 +226,7 @@ export default function StaffPage() {
     const tableNum = o.source ? o.source.replace('Bàn ', '').trim() : '';
 
     const newOrder: Order = {
-      paymentMethod: o.paymentMethod === 'Chuyển khoản' ? 'chuyenkhoan' : 'tienmat',
+      paymentMethod: normalizePaymentMethod(o.paymentMethod),
       id: o.id, // Giữ nguyên ID của khách
       time: new Date().toISOString(),
       tableNo: parseInt(tableNum, 10) || undefined,
@@ -352,9 +353,10 @@ export default function StaffPage() {
   const shiftMetrics = useMemo(() => {
     const todayStr = localDateKey();
     const shiftOrders = recentOrders.filter(o => {
-      const isToday = o.time && localDateKey(new Date(o.time)) === todayStr;
+      const orderDate = parseOrderDate(o.time);
+      const isToday = o.time && localDateKey(orderDate) === todayStr;
       const matchStaff = !staff.trim() || o.staff.toLowerCase() === staff.trim().toLowerCase();
-      const matchShift = o.shift === shift;
+      const matchShift = normalizeShift(o.shift) === normalizeShift(shift);
       return isToday && matchShift && matchStaff;
     });
 
@@ -364,9 +366,10 @@ export default function StaffPage() {
 
     shiftOrders.forEach(o => {
       rev += (o.total || 0);
-      if (o.paymentMethod === 'chuyenkhoan') {
+      const pm = normalizePaymentMethod(o.paymentMethod);
+      if (pm === 'chuyenkhoan') {
         ck += (o.total || 0);
-      } else if (o.paymentMethod === 'tienmat') {
+      } else if (pm === 'tienmat') {
         tm += (o.total || 0);
       }
     });

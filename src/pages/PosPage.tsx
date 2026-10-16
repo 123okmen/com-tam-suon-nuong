@@ -2,13 +2,14 @@ import { useState, useEffect, useMemo } from 'react';
 import LoginGate from '../components/LoginGate';
 import MenuItemCard from '../components/MenuItemCard';
 import { MENU, CATEGORIES, getOrders, saveOrder, syncOrder, getShift, shiftLabel, newOrderId, localDateKey, fmtVND, fmtTime } from '../lib/store';
-import type { Order, OrderLine, Shift } from '../lib/store';
+import type { Order, OrderLine, Shift, PaymentMethod } from '../lib/store';
 
 export default function PosPage() {
   const [staff, setStaff] = useState('');
   const [shift, setShift] = useState<Shift>(getShift());
   const [cart, setCart] = useState<OrderLine[]>([]);
   const [cash, setCash] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('tienmat');
   const [orders, setOrders] = useState<Order[]>([]);
   const [toast, setToast] = useState('');
 
@@ -41,8 +42,9 @@ export default function PosPage() {
       shift,
       lines: cart,
       total,
-      cash: cashNum || undefined,
-      change: cashNum ? change : undefined,
+      paymentMethod,
+      cash: paymentMethod === 'tienmat' ? (cashNum || undefined) : undefined,
+      change: paymentMethod === 'tienmat' ? (cashNum ? change : undefined) : undefined,
       synced: false
     };
     const ok = await syncOrder(order);
@@ -51,6 +53,7 @@ export default function PosPage() {
     setOrders(getOrders());
     setCart([]);
     setCash('');
+    setPaymentMethod('tienmat');
     setToast(ok ? '✅ ĐÃ LƯU ĐƠN!' : '⚠️ LỖI MẠNG - ĐÃ LƯU CỤC BỘ');
     setTimeout(() => setToast(''), 4000);
   };
@@ -140,15 +143,59 @@ export default function PosPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2rem', fontWeight: 'bold' }}>
                     <span>Tổng tiền</span><span style={{ color: '#10b981' }}>{fmtVND(total)}</span>
                   </div>
+                  {/* Chọn phương thức thanh toán */}
                   <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-                    <input className="input-field" style={{ padding: '0.6rem 1rem' }} placeholder="Tiền khách đưa" inputMode="numeric"
-                      value={cash} onChange={e => setCash(e.target.value)} />
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('tienmat')}
+                      style={{
+                        flex: 1,
+                        padding: '0.5rem',
+                        borderRadius: '8px',
+                        border: paymentMethod === 'tienmat' ? '2px solid #10b981' : '1px solid #334155',
+                        background: paymentMethod === 'tienmat' ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)',
+                        color: paymentMethod === 'tienmat' ? '#10b981' : '#cbd5e1',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      💵 Tiền mặt
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('chuyenkhoan')}
+                      style={{
+                        flex: 1,
+                        padding: '0.5rem',
+                        borderRadius: '8px',
+                        border: paymentMethod === 'chuyenkhoan' ? '2px solid #38bdf8' : '1px solid #334155',
+                        background: paymentMethod === 'chuyenkhoan' ? 'rgba(56,189,248,0.2)' : 'rgba(255,255,255,0.05)',
+                        color: paymentMethod === 'chuyenkhoan' ? '#38bdf8' : '#cbd5e1',
+                        fontWeight: 'bold',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      💳 Chuyển khoản QR
+                    </button>
                   </div>
-                  {cashNum > 0 && (
-                    <div style={{ marginTop: '8px', fontSize: '0.95rem' }}>
-                      Tiền thối: <strong style={{ color: change >= 0 ? '#3498db' : '#e74c3c' }}>
-                        {change >= 0 ? fmtVND(change) : 'Thiếu ' + fmtVND(-change)}
-                      </strong>
+
+                  {paymentMethod === 'tienmat' ? (
+                    <>
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                        <input className="input-field" style={{ padding: '0.6rem 1rem' }} placeholder="Tiền khách đưa (bỏ trống = vừa đủ)" inputMode="numeric"
+                          value={cash} onChange={e => setCash(e.target.value)} />
+                      </div>
+                      {cashNum > 0 && (
+                        <div style={{ marginTop: '8px', fontSize: '0.95rem' }}>
+                          Tiền thối: <strong style={{ color: change >= 0 ? '#3498db' : '#e74c3c' }}>
+                            {change >= 0 ? fmtVND(change) : 'Thiếu ' + fmtVND(-change)}
+                          </strong>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ marginTop: '10px', padding: '10px', borderRadius: '8px', background: 'rgba(56,189,248,0.1)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', fontSize: '0.9rem', textAlign: 'center' }}>
+                      Quét mã QR chuyển khoản: <strong>{fmtVND(total)}</strong>
                     </div>
                   )}
                   <button className="btn-primary" style={{ width: '100%', marginTop: '12px', background: '#1e7145', fontSize: '1.05rem' }}

@@ -304,6 +304,26 @@ export function fmtTime(iso: string): string {
   return d.toLocaleString('vi-VN');
 }
 
+export function normalizePaymentMethod(pm?: string): PaymentMethod {
+  if (!pm) return 'tienmat';
+  const s = cleanStr(pm);
+  if (s.includes('chuyen') || s.includes('ck') || s.includes('bank') || s.includes('qr') || s.includes('transfer')) {
+    return 'chuyenkhoan';
+  }
+  if (s.includes('app') || s.includes('grab') || s.includes('shopee') || s.includes('be') || s.includes('food')) {
+    return 'app';
+  }
+  return 'tienmat';
+}
+
+export function normalizeShift(s?: string): Shift {
+  if (!s) return 'sang';
+  const str = cleanStr(s);
+  if (str.includes('chieu') || str.includes('toi')) return 'chieu-toi';
+  if (str.includes('trua')) return 'trua';
+  return 'sang';
+}
+
 export function cleanStr(s: string): string {
   if (!s) return '';
   return s.normalize('NFD')

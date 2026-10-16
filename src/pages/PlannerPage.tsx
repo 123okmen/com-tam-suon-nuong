@@ -7,7 +7,9 @@ import {
   ORDERS_CHANGED_EVENT,
   parseOrderDate,
   getScriptUrl,
-  parseOrderItems
+  parseOrderItems,
+  normalizePaymentMethod,
+  normalizeShift
 } from '../lib/store';
 import type { Order, Shift } from '../lib/store';
 import './PlannerPage.css';
@@ -100,10 +102,10 @@ export default function PlannerPage() {
             id: ao.id,
             time: localTimeStr,
             staff: ao.staff || '',
-            shift: ao.shift as Shift || 'sang',
+            shift: normalizeShift(ao.shift),
             lines: parseOrderItems(ao.items, ao.total),
             total: ao.total || 0,
-            paymentMethod: ao.paymentMethod === 'Chuyển khoản' ? 'chuyenkhoan' : (ao.paymentMethod === 'App' ? 'app' : 'tienmat'),
+            paymentMethod: normalizePaymentMethod(ao.paymentMethod),
             synced: true,
             source: ao.source
           });
@@ -135,24 +137,46 @@ export default function PlannerPage() {
     for (const o of todayOrders) {
       const total = o.total || 0;
       revenue += total;
-      if (o.paymentMethod === 'chuyenkhoan') {
+      const pm = normalizePaymentMethod(o.paymentMethod);
+      if (pm === 'chuyenkhoan') {
         bank += total;
-      } else if (o.paymentMethod === 'app') {
+      } else if (pm === 'app') {
         app += total;
       } else {
         cash += total;
       }
     }
 
-    // Nếu Google Sheets báo cáo KPI cao hơn local, ưu tiên dùng KPI của Google Sheets
+    // Lấy thêm số liệu chuyển khoản / doanh thu từ báo cáo kết ca (nếu có trên Sheets)
+    if (apiData && Array.isArray(apiData.baoCao)) {
+      const dNow = new Date();
+      const dStr = String(dNow.getDate()).padStart(2, '0') + '/' + String(dNow.getMonth() + 1).padStart(2, '0') + '/' + dNow.getFullYear();
+      const todayReports = apiData.baoCao.filter((b: any) => b.ngay === dStr);
+      if (todayReports.length > 0) {
+        let rBank = 0;
+        let rTotal = 0;
+        for (const rep of todayReports) {
+          rBank += Number(rep.tienChuyenKhoan) || 0;
+          rTotal += Number(rep.doanhThu) || 0;
+        }
+        if (rBank > bank) bank = rBank;
+        if (rTotal > revenue) revenue = rTotal;
+      }
+    }
+
+    // Nếu Google Sheets báo cáo KPI cao hơn local, ưu tiên dùng KPI của Google Sheets (không ghi đè 0 vào bank)
     if (apiData && apiData.kpi) {
       if ((apiData.kpi.doanhThu || 0) > revenue) {
         revenue = apiData.kpi.doanhThu || 0;
-        cash = apiData.kpi.tienMat || 0;
-        bank = apiData.kpi.tienChuyenKhoan || 0;
         orderCount = apiData.kpi.soDon || orderCount;
       }
+      if ((apiData.kpi.tienChuyenKhoan || 0) > bank) {
+        bank = apiData.kpi.tienChuyenKhoan || 0;
+      }
     }
+
+    // Tiền mặt chuẩn xác là phần còn lại sau khi trừ chuyển khoản & app
+    cash = Math.max(0, revenue - bank - app);
 
     return {
       revenue,
@@ -172,13 +196,14 @@ export default function PlannerPage() {
     };
 
     for (const o of todayOrders) {
-      const s = o.shift || 'sang';
+      const s = normalizeShift(o.shift);
       if (shifts[s]) {
         const amt = o.total || 0;
         shifts[s].revenue += amt;
         shifts[s].orders += 1;
-        if (o.paymentMethod === 'chuyenkhoan') shifts[s].bank += amt;
-        else if (o.paymentMethod === 'app') shifts[s].app += amt;
+        const pm = normalizePaymentMethod(o.paymentMethod);
+        if (pm === 'chuyenkhoan') shifts[s].bank += amt;
+        else if (pm === 'app') shifts[s].app += amt;
         else shifts[s].cash += amt;
       }
     }
@@ -256,18 +281,16 @@ export default function PlannerPage() {
         const sheetEntries = apiData.baoCao.filter((b: any) => b.ngay === dStr);
         if (sheetEntries.length > 0) {
           let sheetTotal = 0;
-          let sheetCash = 0;
+          let sheetBank = 0;
           for (const se of sheetEntries) {
             sheetTotal += Number(se.doanhThu) || 0;
-            sheetCash += Number(se.tienMat) || 0;
+            sheetBank += Number(se.tienChuyenKhoan) || 0;
           }
-          // Nếu báo cáo chốt ca trên Sheets lớn hơn dữ liệu local (vì điện thoại nhập nhiều), ưu tiên lấy Sheets
           if (sheetTotal > dTotal) {
             dTotal = sheetTotal;
-            dCash = sheetCash;
-            dBank = Math.max(0, sheetTotal - sheetCash);
-            dOrders = Math.max(dOrders, sheetEntries.length * 10); // Ước chừng số đơn nếu không có
+            dOrders = Math.max(dOrders, sheetEntries.length * 10);
           }
+          if (sheetBank > dBank) dBank = sheetBank;
         }
       }
 
@@ -275,12 +298,14 @@ export default function PlannerPage() {
       if (isCurToday && apiData && apiData.kpi) {
         if ((apiData.kpi.doanhThu || 0) > dTotal) {
           dTotal = apiData.kpi.doanhThu || 0;
-          dCash = apiData.kpi.tienMat || 0;
-          dBank = apiData.kpi.tienChuyenKhoan || 0;
           dOrders = apiData.kpi.soDon || dOrders;
+        }
+        if ((apiData.kpi.tienChuyenKhoan || 0) > dBank) {
+          dBank = apiData.kpi.tienChuyenKhoan || 0;
         }
       }
 
+      dCash = Math.max(0, dTotal - dBank - dApp);
       weekRevenue += dTotal;
       weekOrders += dOrders;
       weekCash += dCash;
@@ -383,17 +408,16 @@ export default function PlannerPage() {
         const sheetEntries = apiData.baoCao.filter((b: any) => b.ngay === dStr);
         if (sheetEntries.length > 0) {
           let sheetTotal = 0;
-          let sheetCash = 0;
+          let sheetBank = 0;
           for (const se of sheetEntries) {
             sheetTotal += Number(se.doanhThu) || 0;
-            sheetCash += Number(se.tienMat) || 0;
+            sheetBank += Number(se.tienChuyenKhoan) || 0;
           }
           if (sheetTotal > dTotal) {
             dTotal = sheetTotal;
-            dCash = sheetCash;
-            dBank = Math.max(0, sheetTotal - sheetCash);
             dOrders = Math.max(dOrders, sheetEntries.length * 10);
           }
+          if (sheetBank > dBank) dBank = sheetBank;
         }
       }
 
@@ -401,12 +425,14 @@ export default function PlannerPage() {
       if (isCurToday && apiData && apiData.kpi) {
         if ((apiData.kpi.doanhThu || 0) > dTotal) {
           dTotal = apiData.kpi.doanhThu || 0;
-          dCash = apiData.kpi.tienMat || 0;
-          dBank = apiData.kpi.tienChuyenKhoan || 0;
           dOrders = apiData.kpi.soDon || dOrders;
+        }
+        if ((apiData.kpi.tienChuyenKhoan || 0) > dBank) {
+          dBank = apiData.kpi.tienChuyenKhoan || 0;
         }
       }
 
+      dCash = Math.max(0, dTotal - dBank - dApp);
       monthRevenue += dTotal;
       monthOrders += dOrders;
       monthCash += dCash;
@@ -1066,9 +1092,9 @@ export default function PlannerPage() {
                             {fmtVND(o.total)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            {o.paymentMethod === 'chuyenkhoan' && <span className="rpt-badge rpt-badge-bank">Chuyển Khoản</span>}
-                            {o.paymentMethod === 'app' && <span className="rpt-badge rpt-badge-app">Đơn App</span>}
-                            {(!o.paymentMethod || o.paymentMethod === 'tienmat') && <span className="rpt-badge rpt-badge-cash">Tiền Mặt</span>}
+                            {normalizePaymentMethod(o.paymentMethod) === 'chuyenkhoan' && <span className="rpt-badge rpt-badge-bank">Chuyển Khoản</span>}
+                            {normalizePaymentMethod(o.paymentMethod) === 'app' && <span className="rpt-badge rpt-badge-app">Đơn App</span>}
+                            {normalizePaymentMethod(o.paymentMethod) === 'tienmat' && <span className="rpt-badge rpt-badge-cash">Tiền Mặt</span>}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             {o.synced ? (
