@@ -31,13 +31,13 @@ export const CATEGORIES: CategoryInfo[] = [
 
 export const MENU: MenuItem[] = [
   // --- CƠM TẤM SƯỜN ---
-  { id: 'ct-1', name: 'Cơm Tấm Sườn Bì Chả Trứng (Đặc Biệt)', price: 45000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng than + Bì + Chả trứng + Trứng ốp la' },
-  { id: 'ct-2', name: 'Cơm Tấm Sườn Bì Chả', price: 40000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Bì + Chả trứng hấp' },
+  { id: 'ct-1', name: 'Cơm Tấm Sườn Bì Chả Trứng (Đặc Biệt)', price: 50000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng than + Bì + Chả trứng + Trứng ốp la' },
+  { id: 'ct-2', name: 'Cơm Tấm Sườn Bì Chả', price: 45000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Bì + Chả trứng hấp' },
   { id: 'ct-3', name: 'Cơm Tấm Sườn Trứng Ốp La', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng + Trứng ốp la' },
   { id: 'ct-4', name: 'Cơm Tấm Sườn Bì', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng mềm thơm + Bì thính' },
-  { id: 'ct-5', name: 'Cơm Tấm Sườn Chả', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Chả trứng hấp' },
+  { id: 'ct-5', name: 'Cơm Tấm Sườn Chả', price: 40000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Chả trứng hấp' },
   { id: 'ct-6', name: 'Cơm Tấm Sườn', price: 30000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng than hồng' },
-  { id: 'ct-7', name: 'Cơm Tấm 2 Sườn', price: 50000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Hai miếng sườn nướng cho người ăn khỏe' },
+  { id: 'ct-7', name: 'Cơm Tấm 2 Sườn', price: 55000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Hai miếng sườn nướng cho người ăn khỏe' },
 
   // --- CƠM CHIÊN CÁC LOẠI ---
   { id: 'cc-1', name: 'Cơm Chiên Dưa Bò', price: 45000, category: 'com-chien', description: 'Bắp bò xào dưa cải chua + Cơm chiên vàng hạt' },
