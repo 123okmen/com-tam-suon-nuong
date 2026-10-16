@@ -33,7 +33,7 @@ export const MENU: MenuItem[] = [
   // --- CƠM TẤM SƯỜN ---
   { id: 'ct-1', name: 'Cơm Tấm Sườn Bì Chả Trứng (Đặc Biệt)', price: 45000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng than + Bì + Chả trứng + Trứng ốp la' },
   { id: 'ct-2', name: 'Cơm Tấm Sườn Bì Chả', price: 40000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Bì + Chả trứng hấp' },
-  { id: 'ct-3', name: 'Cơm Tấm Sườn Ốp La', price: 38000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng + Trứng ốp la' },
+  { id: 'ct-3', name: 'Cơm Tấm Sườn Trứng Ốp La', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng + Trứng ốp la' },
   { id: 'ct-4', name: 'Cơm Tấm Sườn Bì', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng mềm thơm + Bì thính' },
   { id: 'ct-5', name: 'Cơm Tấm Sườn Chả', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Chả trứng hấp' },
   { id: 'ct-6', name: 'Cơm Tấm Sườn', price: 30000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng than hồng' },
@@ -51,8 +51,8 @@ export const MENU: MenuItem[] = [
   // --- TOPPING PHỔ BIẾN ---
   { id: 'tp-1', name: 'Sườn Nướng Thêm', price: 25000, category: 'topping', img: 'com_tam_suon.jpg' },
   { id: 'tp-2', name: 'Bì Thêm', price: 7000, category: 'topping' },
-  { id: 'tp-3', name: 'Chả Trứng Thêm', price: 8000, category: 'topping' },
-  { id: 'tp-4', name: 'Trứng Ốp La', price: 7000, category: 'topping' },
+  { id: 'tp-3', name: 'Chả Trứng Thêm', price: 10000, category: 'topping' },
+  { id: 'tp-4', name: 'Trứng Ốp La Thêm', price: 5000, category: 'topping' },
   { id: 'tp-5', name: 'Lạp Xưởng', price: 10000, category: 'topping' },
   { id: 'tp-6', name: 'Dưa Cải Xào Bò Thêm', price: 20000, category: 'topping' },
   { id: 'tp-7', name: 'Cơm Thêm', price: 5000, category: 'topping' },
