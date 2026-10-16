@@ -49,7 +49,7 @@ export const MENU: MenuItem[] = [
   { id: 'cc-7', name: 'Cơm Chiên Trứng', price: 30000, category: 'com-chien', description: 'Cơm chiên trứng đơn giản, nhanh gọn' },
 
   // --- TOPPING PHỔ BIẾN ---
-  { id: 'tp-1', name: 'Sườn Nướng Thêm', price: 20000, category: 'topping', img: 'com_tam_suon.jpg' },
+  { id: 'tp-1', name: 'Sườn Nướng Thêm', price: 25000, category: 'topping', img: 'com_tam_suon.jpg' },
   { id: 'tp-2', name: 'Bì Thêm', price: 7000, category: 'topping' },
   { id: 'tp-3', name: 'Chả Trứng Thêm', price: 8000, category: 'topping' },
   { id: 'tp-4', name: 'Trứng Ốp La', price: 7000, category: 'topping' },
