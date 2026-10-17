@@ -10,10 +10,19 @@ import {
   normalizePaymentMethod, normalizeShift, parseOrderDate
 } from '../lib/store';
 import type { Order, OrderLine, Shift } from '../lib/store';
-import { printReceipt } from '../utils/print';
+import { printReceipt, isComputerMode } from '../utils/print';
 
 export default function StaffPage() {
-  
+  const [isDesktopMode, setIsDesktopMode] = useState<boolean>(() => isComputerMode());
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktopMode(isComputerMode());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [tab, setTab] = useState<'pos' | 'shift' | 'schedule' | 'off' | 'report'>('pos');
   const [offData, setOffData] = useState({ date: localDateKey(), shift: 'sang', reason: '' });
   const [staff, setStaff] = useState('');
@@ -200,8 +209,10 @@ export default function StaffPage() {
     }
     setTimeout(() => setToast(''), 4000);
     
-    // In bill sau khi tạo đơn hoặc vừa sửa cập nhật xong
-    printReceipt(order);
+    // In bill sau khi tạo đơn hoặc vừa sửa cập nhật xong (chỉ in ở thiết bị di động, bỏ qua ở chế độ máy tính)
+    if (!isDesktopMode) {
+      printReceipt(order);
+    }
   };
 
   const handleConfirmOnlineOrder = async (o: any) => {
@@ -244,9 +255,12 @@ export default function StaffPage() {
     const ok = await syncOrder(newOrder);
     newOrder.synced = ok;
     saveOrder(newOrder);
+    setEditingOrderId(null);
     
     setRecentOrders(getOrders());
-    printReceipt(newOrder);
+    if (!isDesktopMode) {
+      printReceipt(newOrder);
+    }
     
     setOnlineOrders(prev => prev.filter(x => x.id !== o.id));
     setToast('Đã xác nhận & In Bill đơn từ bàn!');
@@ -660,7 +674,8 @@ export default function StaffPage() {
                 </div>
               )}
 
-              <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--glass-border)' }}>
+              {!isDesktopMode && (
+                <div className="mobile-only-print" style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px dashed var(--glass-border)' }}>
                 <div style={{ 
                   display: 'flex', 
                   justifyContent: 'space-between', 
@@ -714,6 +729,7 @@ export default function StaffPage() {
                   </button>
                 </div>
               </div>
+              )}
             </div>
           </div>
 
@@ -794,10 +810,12 @@ export default function StaffPage() {
                               onClick={() => editOrder(o)}>
                               ✏️ Sửa
                             </button>
-                            <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.8rem', background: '#9b59b6' }}
-                              onClick={() => printReceipt(o)}>
-                              🖨️ In
-                            </button>
+                            {!isDesktopMode && (
+                              <button className="btn-primary mobile-only-print" style={{ padding: '4px 10px', fontSize: '0.8rem', background: '#9b59b6' }}
+                                onClick={() => printReceipt(o)}>
+                                🖨️ In
+                              </button>
+                            )}
                             <button className="btn-primary" style={{ padding: '4px 10px', fontSize: '0.8rem', background: '#e74c3c' }}
                               onClick={() => handleDeleteOrder(o.id)}>
                               🗑️ Xóa

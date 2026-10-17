@@ -480,8 +480,18 @@ export default function PlannerPage() {
     };
   }, [orders, selectedMonth, todayKey, apiData]);
 
+  const isShareholderMode = 
+    typeof window !== 'undefined' && (
+      window.location.hash.toLowerCase().includes('codong') ||
+      window.location.hash.toLowerCase().includes('baocao') ||
+      window.location.hash.toLowerCase().includes('report') ||
+      window.location.hash.toLowerCase().includes('share') ||
+      window.location.search.toLowerCase().includes('codong') ||
+      window.location.search.toLowerCase().includes('share')
+    );
+
   return (
-    <LoginGate expectedPassword="khoinghiep123" storageKey="auth_planner" title="Khu Vực Báo Cáo Doanh Thu">
+    <LoginGate expectedPassword={isShareholderMode ? undefined : "khoinghiep123"} storageKey="auth_planner" title="Khu Vực Báo Cáo Doanh Thu">
       <div className="rpt-container">
         
         {/* HEADER BÁO CÁO */}
@@ -511,13 +521,15 @@ export default function PlannerPage() {
               🔄 {isRefreshing ? 'Đang tải...' : 'Làm mới'}
             </button>
 
-            <button 
-              className="rpt-btn-refresh"
-              onClick={() => { window.location.hash = '#/staff'; }}
-              style={{ background: '#10b981', color: '#0f172a', borderColor: '#10b981' }}
-            >
-              ➕ Tab Nhập Món
-            </button>
+            {!isShareholderMode && (
+              <button 
+                className="rpt-btn-refresh"
+                onClick={() => { window.location.hash = '#/staff'; }}
+                style={{ background: '#10b981', color: '#0f172a', borderColor: '#10b981' }}
+              >
+                ➕ Tab Nhập Món
+              </button>
+            )}
           </div>
         </header>
 

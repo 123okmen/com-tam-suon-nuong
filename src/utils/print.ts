@@ -1,10 +1,33 @@
 import type { Order, OrderLine } from '../lib/store';
-import { fmtVND, BRAND_NAME, BRAND_SUBTITLE, shiftLabel, getShift, findMenuPrice, parseOrderItems } from '../lib/store';
+import { BRAND_NAME, BRAND_SUBTITLE, shiftLabel, getShift, findMenuPrice, parseOrderItems } from '../lib/store';
 
 /** Kiểm tra thiết bị có phải di động (iPhone / iPad / Android) */
 export function isMobileDevice(): boolean {
   if (typeof navigator === 'undefined') return false;
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+}
+
+/**
+ * Kiểm tra xem thiết bị có đang ở chế độ máy tính (Desktop / PC / Laptop hoặc mobile bật Desktop Site) hay không.
+ * Trả về true nếu:
+ * 1. Màn hình rộng (window.innerWidth >= 768px).
+ * 2. User-Agent không phải thiết bị di động (Windows, Mac, Linux...).
+ */
+export function isComputerMode(): boolean {
+  if (typeof window === 'undefined') return false;
+  const isWide = window.innerWidth >= 768;
+  const isDesktopUA = !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+  return isWide || isDesktopUA;
+}
+
+/** Định dạng tiền tệ cho máy in text / Bluetooth ESC/POS (chuẩn ký tự ASCII 'd', tuyệt đối không lỗi font ký tự đ) */
+export function fmtPrintPlainVND(n: number): string {
+  return (n || 0).toLocaleString('vi-VN') + 'd';
+}
+
+/** Định dạng tiền tệ an toàn cho bản in HTML (chuẩn phông Arial/Segoe UI) */
+export function fmtPrintHtmlVND(n: number): string {
+  return (n || 0).toLocaleString('vi-VN') + ' đ';
 }
 
 /** Chuyển tiếng Việt có dấu sang không dấu (dùng cho máy in Bluetooth ESC/POS thuần) */
@@ -89,7 +112,7 @@ export function generateReceiptPlainText(order: Order): string {
   lines.forEach(l => {
     const safeName = removeVietnameseTones(l.name).slice(0, 16);
     const qty = String(l.qty || 1);
-    const priceStr = fmtVND((l.price || 0) * (l.qty || 1));
+    const priceStr = fmtPrintPlainVND((l.price || 0) * (l.qty || 1));
     text += padRight(safeName, 16) + padLeft(qty, 4) + padLeft(priceStr, 12) + '\n';
     if (l.note) {
       text += '  * ' + removeVietnameseTones(l.note) + '\n';
@@ -97,9 +120,9 @@ export function generateReceiptPlainText(order: Order): string {
   });
 
   text += singleLine + '\n';
-  text += padRight('TONG CONG:', 16) + padLeft(fmtVND(finalTotal), 16) + '\n';
+  text += padRight('TONG CONG:', 16) + padLeft(fmtPrintPlainVND(finalTotal), 16) + '\n';
   if (order.cash) {
-    text += `Khach: ${fmtVND(order.cash)} - Thoi: ${fmtVND(changeMoney > 0 ? changeMoney : 0)}\n`;
+    text += `Khach: ${fmtPrintPlainVND(order.cash)} - Thoi: ${fmtPrintPlainVND(changeMoney > 0 ? changeMoney : 0)}\n`;
   }
   if (order.note) {
     text += '* Ghi chu: ' + removeVietnameseTones(order.note) + '\n';
@@ -147,12 +170,12 @@ export function generateReceiptHtml(order: Order): string {
         ${l.note ? `<div style="font-size: 9.5px; font-style: italic; color: #000;">➥ ${l.note}</div>` : ''}
       </td>
       <td style="text-align: center; padding: 2px 0; border-bottom: 1px dotted #000; vertical-align: top; font-weight: 700; font-size: 11px; color: #000;">${l.qty}</td>
-      <td style="text-align: right; padding: 2px 0; border-bottom: 1px dotted #000; vertical-align: top; font-weight: 700; font-size: 11px; white-space: nowrap; color: #000;">${fmtVND(l.price * l.qty)}</td>
+      <td style="text-align: right; padding: 2px 0; border-bottom: 1px dotted #000; vertical-align: top; font-weight: 700; font-size: 11px; white-space: nowrap; color: #000;">${fmtPrintHtmlVND(l.price * l.qty)}</td>
     </tr>
   `).join('');
 
   return `
-    <div style="width: 48mm; max-width: 48mm; margin: 0 auto; padding: 2px 1px; color: #000; background: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; font-size: 11px; line-height: 1.25;">
+    <div style="width: 48mm; max-width: 48mm; margin: 0 auto; padding: 2px 1px; color: #000; background: #fff; font-family: Arial, 'Segoe UI', Tahoma, sans-serif; font-size: 11px; line-height: 1.25;">
       <div style="text-align: center; margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px dashed #000;">
         <div style="font-size: 14px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase;">${BRAND_NAME}</div>
         <div style="font-size: 9.5px; font-weight: 600; margin-top: 1px;">${BRAND_SUBTITLE}</div>
@@ -190,12 +213,12 @@ export function generateReceiptHtml(order: Order): string {
       <div style="border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 3px 0; margin: 3px 0;">
         <div style="display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; font-weight: 900;">
           <span>TỔNG CỘNG:</span>
-          <span>${fmtVND(finalTotal)}</span>
+          <span>${fmtPrintHtmlVND(finalTotal)}</span>
         </div>
         ${order.cash ? `
         <div style="display: flex; justify-content: space-between; font-size: 10px; margin-top: 2px;">
-          <span>Khách đưa: ${fmtVND(order.cash)}</span>
-          <span>Thối: ${fmtVND(changeMoney > 0 ? changeMoney : 0)}</span>
+          <span>Khách đưa: ${fmtPrintHtmlVND(order.cash)}</span>
+          <span>Thối: ${fmtPrintHtmlVND(changeMoney > 0 ? changeMoney : 0)}</span>
         </div>
         ` : ''}
         ${order.note ? `
@@ -436,6 +459,32 @@ function ensurePrintStyles() {
           background: #fff !important;
           color: #000 !important;
           z-index: 9999999 !important;
+          font-family: Arial, 'Segoe UI', Tahoma, sans-serif !important;
+        }
+        #receipt-print-stage,
+        #receipt-print-stage * {
+          font-family: Arial, 'Segoe UI', Tahoma, sans-serif !important;
+          color: #000 !important;
+          box-sizing: border-box !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        #receipt-print-stage table {
+          display: table !important;
+          width: 100% !important;
+        }
+        #receipt-print-stage thead {
+          display: table-header-group !important;
+        }
+        #receipt-print-stage tbody {
+          display: table-row-group !important;
+        }
+        #receipt-print-stage tr {
+          display: table-row !important;
+        }
+        #receipt-print-stage th,
+        #receipt-print-stage td {
+          display: table-cell !important;
         }
       }
     `;
@@ -648,6 +697,12 @@ export function showPrintModal(order: Order) {
  * - Trên máy tính (PC): Tự động mở hộp thoại in của trình duyệt và lưu nội dung sẵn sàng.
  */
 export function printReceipt(order: Order) {
+  // Khi ở chế độ máy tính (Desktop / Màn hình rộng >= 768px hoặc PC): Không hiển thị / thực thi các chức năng in bill
+  if (isComputerMode()) {
+    console.log('Chế độ máy tính: Bỏ qua và không hiển thị các chức năng in hóa đơn.');
+    return;
+  }
+
   localStorage.setItem('printer_size', '58');
   ensurePrintStyles();
 
@@ -661,10 +716,5 @@ export function printReceipt(order: Order) {
   stage.innerHTML = generateReceiptHtml(order);
 
   // Trên thiết bị di động (iPhone/Android): Luôn hiển thị Modal để người dùng chọn cách in thuận tiện nhất
-  if (isMobileDevice()) {
-    showPrintModal(order);
-  } else {
-    // Trên máy tính Desktop: Gọi trực tiếp lệnh in trình duyệt
-    window.print();
-  }
+  showPrintModal(order);
 }

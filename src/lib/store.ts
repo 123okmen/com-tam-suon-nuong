@@ -400,3 +400,67 @@ export function parseOrderItems(rawInput?: string, orderTotal?: number): OrderLi
 
   return result;
 }
+
+
+/**
+ * Kiểm tra chính xác xem đơn hàng có phải do khách tự gọi món tại bàn hay không.
+ * Chỉ trả về true nếu:
+ * 1. Nguồn đơn (source) ghi rõ số bàn (ví dụ: "Bàn 1", "Bàn 2", "Khách gọi bàn", "QR Bàn").
+ * 2. HOẶC người đặt (staff) là khách tại bàn (ví dụ: "Khách - Bàn 1", "Khách Bàn 5").
+ * 3. Tuyệt đối KHÔNG thông báo cho: "Tại Quầy", "POS", "Mang về", "Đơn App", "Shopee", "Grab".
+ */
+export function isCustomerTableOrder(o: { source?: string; staff?: string; orderType?: string }): boolean {
+  if (!o) return false;
+  const src = (o.source || "").trim().toLowerCase();
+  const staff = (o.staff || "").trim().toLowerCase();
+
+  // 1. Loại trừ triệt để các đơn không phải khách gọi tại bàn
+  if (
+    src.includes("tại quầy") ||
+    src.includes("tai quay") ||
+    src.includes("pos") ||
+    src.includes("thu ngân") ||
+    src.includes("thu ngan") ||
+    src.includes("mang về") ||
+    src.includes("mang ve") ||
+    src.includes("app") ||
+    src.includes("shopee") ||
+    src.includes("grab") ||
+    src.includes("giao hàng") ||
+    src.includes("giao hang")
+  ) {
+    return false;
+  }
+
+  // 2. Nhận diện đơn khách gọi tại bàn:
+  const isTableSource = /^(bàn|ban)s*d+/i.test(src) ||
+                        src.includes("gọi bàn") ||
+                        src.includes("goi ban") ||
+                        src.includes("qr bàn") ||
+                        src.includes("qr ban") ||
+                        src.includes("tại bàn") ||
+                        src.includes("tai ban");
+
+  const isTableStaff = staff.includes("khách") && (staff.includes("bàn") || staff.includes("ban"));
+
+  return Boolean(isTableSource || isTableStaff);
+}
+
+export const HANDLED_TABLE_ORDERS_KEY = "comtam_handled_table_orders_v1";
+
+export function getHandledTableOrders(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HANDLED_TABLE_ORDERS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function markTableOrderHandled(orderId: string): void {
+  try {
+    const set = getHandledTableOrders();
+    set.add(orderId);
+    localStorage.setItem(HANDLED_TABLE_ORDERS_KEY, JSON.stringify(Array.from(set)));
+  } catch {}
+}

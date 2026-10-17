@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Montserrat:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&family=Montserrat:wght@400;600;800&subset=vietnamese&display=swap');
 
 :root {
   --bg-color: #050505;
@@ -135,3 +135,12 @@ h1, h2, h3, .title, .btn-primary {
 }
 
 @keyframes blinker { 50% { opacity: 0; } } .blink { animation: blinker 1s linear infinite; }
+
+
+/* Ẩn toàn bộ chức năng in bill khi mở ở chế độ máy tính (Desktop / Màn hình >= 768px) */
+@media (min-width: 768px) {
+  .mobile-only-print,
+  .print-feature-mobile-only {
+    display: none !important;
+  }
+}
