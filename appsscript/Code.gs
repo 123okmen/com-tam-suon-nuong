@@ -1,3 +1,18 @@
+
+// Kiểm tra ngày trước ngày khai trương chính thức (16/10/2026)
+function isBeforeOpeningDate(ngayStr) {
+  if (!ngayStr) return false;
+  var parts = String(ngayStr).split('/');
+  if (parts.length < 3) return false;
+  var d = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10);
+  var y = parseInt(parts[2], 10);
+  if (y < 2026) return true;
+  if (y === 2026 && m < 10) return true;
+  if (y === 2026 && m === 10 && d < 16) return true;
+  return false;
+}
+
 // ============================================================
 // TRẠM KHỞI NGHIỆP – CƠM TẤM SƯỜN NƯỚNG & CƠM CHIÊN
 // Google Apps Script kết nối Web App: Đơn Hàng | Chấm Công | Báo Cáo Cuối Ca | Off Ca | Tổng Hợp KPI
@@ -47,6 +62,7 @@ function doPost(e) {
     if (type === 'off_request' || type === 'off') return handleOffRequest(data);
     if (type === 'delete_order') return handleDeleteOrder(data);
     if (type === 'summary') return handleSummary(data);
+    if (type === 'clean_test' || type === 'delete_test') return cleanTestOrdersBeforeOpening();
     if (type === 'reset' || type === 'reset_all' || type === 'clear_all_data') return handleResetAllData();
 
     return jsonOk('Đã nhận dữ liệu POST nhưng chưa có handler cho: ' + type);
@@ -495,14 +511,21 @@ function updateKpiDashboard() {
   if (dh && dh.getLastRow() > 1) {
     var numRows = dh.getLastRow() - 1;
     var dvals = dh.getRange(2, 1, numRows, dh.getLastColumn()).getValues();
-    tongSoDonTichLuy = dvals.length;
-    for (var i = 0; i < dvals.length; i++) {
+        for (var i = 0; i < dvals.length; i++) {
       var row = dvals[i];
+      var orderId = String(row[0] || '');
       var ngay = normDay(row[1]);
+
+      // Bỏ qua đơn test hoặc đơn trước ngày khai trương 16/10/2026
+      if (orderId.indexOf('TEST_') === 0 || isBeforeOpeningDate(ngay)) {
+        continue;
+      }
+
       var total = num(row[8]);
       var pt = String(row[9] || "").toLowerCase();
 
       tongDoanhThuTichLuy += total;
+      tongSoDonTichLuy++;
 
       // 1. Chỉ số hôm nay
       if (ngay === t.ngay) {
@@ -580,6 +603,12 @@ function apiRealtimeData() {
       var row = dvals[i];
       var orderId = String(row[0] || '');
       var ngay = normDay(row[1]);
+
+      // Bỏ qua đơn test hoặc đơn trước ngày khai trương 16/10/2026
+      if (orderId.indexOf('TEST_') === 0 || isBeforeOpeningDate(ngay)) {
+        continue;
+      }
+
       var gio = normHour(row[2]);
       var total = num(row[8]);
       var pt = String(row[9] || '');
@@ -896,4 +925,50 @@ function renderLiveDashboard() {
            + '<a class="btn" href="?action=data">Xem JSON Data</a>'
            + '</div></body></html>';
   return HtmlService.createHtmlOutput(html).setTitle(STORE_NAME);
+}
+
+function menuCleanTestOrders() {
+  try {
+    var ui = SpreadsheetApp.getUi();
+    var ans = ui.alert('Xóa đơn test trước 16/10', 'Bạn có chắc chắn muốn xóa sạch toàn bộ các đơn test phát sinh trước ngày khai trương chính thức (16/10/2026)?', ui.ButtonSet.YES_NO);
+    if (ans === ui.Button.YES) {
+      var res = cleanTestOrdersBeforeOpening();
+      ui.alert('Thành công', res.msg || 'Đã dọn dẹp xong đơn test!', ui.ButtonSet.OK);
+    }
+  } catch (e) {
+    Logger.log('menuCleanTestOrders error: ' + e);
+  }
+}
+
+function cleanTestOrdersBeforeOpening() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var dh = findSheet(ss, 'Đơn Hàng', ['Don hang', 'Đơn hàng']);
+    if (!dh || dh.getLastRow() <= 1) return jsonOk('Không có đơn hàng nào');
+
+    var numRows = dh.getLastRow() - 1;
+    var dvals = dh.getRange(2, 1, numRows, dh.getLastColumn()).getValues();
+    var count = 0;
+
+    for (var i = dvals.length - 1; i >= 0; i--) {
+      var row = dvals[i];
+      var orderId = String(row[0] || '');
+      var ngay = normDay(row[1]);
+      if (orderId.indexOf('TEST_') === 0 || isBeforeOpeningDate(ngay)) {
+        dh.deleteRow(i + 2);
+        count++;
+      }
+    }
+
+    try {
+      updateKpiDashboard();
+    } catch (kpiErr) {
+      Logger.log('updateKpiDashboard after clean error: ' + kpiErr);
+    }
+
+    return jsonOk('Đã xóa thành công ' + count + ' đơn test trước ngày 16/10/2026');
+  } catch (err) {
+    Logger.log('cleanTestOrdersBeforeOpening error: ' + err);
+    return jsonErr('Lỗi khi xóa đơn test: ' + err.toString());
+  }
 }

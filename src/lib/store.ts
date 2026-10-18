@@ -110,11 +110,59 @@ export const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycby8rz7upf
 /** Key localStorage dùng chung cho mọi trang (POS, Nhân viên, Gọi món). */
 export const ORDERS_KEY = 'comtam_orders_v1';
 export const ORDERS_CHANGED_EVENT = 'comtam_orders_changed';
+export const OFFICIAL_OPENING_DATE = '2026-10-16'; // Ngày khai trương chính thức
+
+export function isOrderFromOpening(timeStr: string, orderId?: string): boolean {
+  if (orderId && orderId.startsWith('TEST_')) return false;
+  try {
+    const d = parseOrderDate(timeStr);
+    const key = localDateKey(d);
+    return key >= OFFICIAL_OPENING_DATE;
+  } catch {
+    return false;
+  }
+}
+
+// Tự động quét và xóa sạch toàn bộ đơn test trước ngày khai trương 16/10/2026 khỏi localStorage khi khởi động
+if (typeof window !== 'undefined') {
+  try {
+    const raw = localStorage.getItem(ORDERS_KEY);
+    if (raw) {
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        const cleaned = list.filter((o: any) => isOrderFromOpening(o.time, o.id));
+        if (cleaned.length !== list.length) {
+          localStorage.setItem(ORDERS_KEY, JSON.stringify(cleaned));
+          console.log(`[CleanUp] Đã tự động xóa ${list.length - cleaned.length} đơn test trước ngày 16/10/2026`);
+        }
+      }
+    }
+    // Dọn dẹp cả các key report_ và shift_ cũ nếu có
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('report_') || k.startsWith('shift_'))) {
+        const parts = k.split('_');
+        if (parts[1] && parts[1] < OFFICIAL_OPENING_DATE) {
+          localStorage.removeItem(k);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Lỗi khi quét dọn đơn test cũ:', e);
+  }
+}
 
 export function getOrders(): Order[] {
   try {
     const raw = localStorage.getItem(ORDERS_KEY);
-    return raw ? JSON.parse(raw) as Order[] : [];
+    if (!raw) return [];
+    const list = JSON.parse(raw) as Order[];
+    // Tự động loại bỏ và làm sạch các đơn test trước ngày khai trương 16/10/2026
+    const cleaned = list.filter(o => isOrderFromOpening(o.time, o.id));
+    if (cleaned.length !== list.length) {
+      localStorage.setItem(ORDERS_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
   } catch {
     return [];
   }

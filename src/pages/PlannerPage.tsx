@@ -9,7 +9,9 @@ import {
   getScriptUrl,
   parseOrderItems,
   normalizePaymentMethod,
-  normalizeShift
+  normalizeShift,
+  isOrderFromOpening,
+  OFFICIAL_OPENING_DATE
 } from '../lib/store';
 import type { Order, Shift } from '../lib/store';
 import './PlannerPage.css';
@@ -87,16 +89,19 @@ export default function PlannerPage() {
   // GỘP ĐƠN LOCAL VÀ ĐƠN TỪ ĐIỆN THOẠI (GOOGLE SHEETS)
   // ----------------------------------------------------
   const allMergedOrders = useMemo(() => {
-    const local = [...orders];
-    
+    // 1. Chỉ lấy đơn từ ngày khai trương 16/10/2026, loại bỏ toàn bộ đơn test
+    const local = orders.filter(o => isOrderFromOpening(o.time, o.id));
+
     if (apiData && Array.isArray(apiData.donHang)) {
       const localIds = new Set(local.map(o => o.id));
-      
+
       apiData.donHang.forEach((ao: any) => {
         if (!localIds.has(ao.id) && ao.date) {
-          // Sử dụng định dạng DD/MM/YYYY HH:MM:SS để store.ts parse chính xác theo giờ VN
           const timeStr = ao.time || '00:00:00';
           const localTimeStr = `${ao.date} ${timeStr}`;
+
+          // Lọc bỏ triệt để đơn test và đơn trước ngày khai trương 16/10/2026
+          if (!isOrderFromOpening(localTimeStr, ao.id)) return;
 
           local.push({
             id: ao.id,
@@ -377,6 +382,11 @@ export default function PlannerPage() {
       const displayDate = `${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}`;
       const isCurToday = key === todayKey;
 
+      // Quán chỉ bắt đầu bán từ 16/10/2026, loại bỏ hoàn toàn các ngày test trước khai trương
+      if (key < OFFICIAL_OPENING_DATE) {
+        continue;
+      }
+
       const matchingOrders = allMergedOrders.filter(o => localDateKey(parseOrderDate(o.time)) === key);
 
       let dTotal = 0;
@@ -501,7 +511,7 @@ export default function PlannerPage() {
               <span>📊 Báo Cáo Doanh Thu Real-Time</span>
             </h1>
             <p className="rpt-subtitle">
-              Cơm Tấm Sườn Nướng & Cơm Chiên – Cập nhật trực tiếp chính xác từ Tab Nhập Món
+              Cơm Tấm Sườn Nướng & Cơm Chiên • <strong>Khai trương chính thức từ {OFFICIAL_OPENING_DATE.split('-').reverse().join('/')}</strong>
             </p>
           </div>
 
