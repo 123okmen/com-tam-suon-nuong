@@ -31,31 +31,31 @@ export const CATEGORIES: CategoryInfo[] = [
 
 export const MENU: MenuItem[] = [
   // --- CƠM TẤM SƯỜN ---
-  { id: 'ct-1', name: 'Cơm Tấm Sườn Bì Chả Trứng (Đặc Biệt)', price: 50000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng than + Bì + Chả trứng + Trứng ốp la' },
-  { id: 'ct-2', name: 'Cơm Tấm Sườn Bì Chả', price: 45000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Bì + Chả trứng hấp' },
-  { id: 'ct-3', name: 'Cơm Tấm Sườn Trứng Ốp La', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng + Trứng ốp la' },
-  { id: 'ct-4', name: 'Cơm Tấm Sườn Bì', price: 35000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng mềm thơm + Bì thính' },
-  { id: 'ct-5', name: 'Cơm Tấm Sườn Chả', price: 40000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn nướng + Chả trứng hấp' },
-  { id: 'ct-6', name: 'Cơm Tấm Sườn', price: 30000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Sườn cốt lết nướng than hồng' },
-  { id: 'ct-7', name: 'Cơm Tấm 2 Sườn', price: 55000, category: 'com-tam', img: 'com_tam_suon.jpg', description: 'Hai miếng sườn nướng cho người ăn khỏe' },
+  { id: 'ct-1', name: 'Cơm Tấm Sườn Bì Chả Trứng (Đặc Biệt)', price: 50000, category: 'com-tam', img: 'menu/ct-1.jpg', description: 'Sườn nướng than + Bì + Chả trứng + Trứng ốp la' },
+  { id: 'ct-2', name: 'Cơm Tấm Sườn Bì Chả', price: 45000, category: 'com-tam', img: 'menu/ct-2.jpg', description: 'Sườn nướng + Bì + Chả trứng hấp' },
+  { id: 'ct-3', name: 'Cơm Tấm Sườn Trứng Ốp La', price: 35000, category: 'com-tam', img: 'menu/ct-3.jpg', description: 'Sườn cốt lết nướng + Trứng ốp la' },
+  { id: 'ct-4', name: 'Cơm Tấm Sườn Bì', price: 35000, category: 'com-tam', img: 'menu/ct-4.jpg', description: 'Sườn nướng mềm thơm + Bì thính' },
+  { id: 'ct-5', name: 'Cơm Tấm Sườn Chả', price: 40000, category: 'com-tam', img: 'menu/ct-5.jpg', description: 'Sườn nướng + Chả trứng hấp' },
+  { id: 'ct-6', name: 'Cơm Tấm Sườn', price: 30000, category: 'com-tam', img: 'menu/ct-6.jpg', description: 'Sườn cốt lết nướng than hồng' },
+  { id: 'ct-7', name: 'Cơm Tấm 2 Sườn', price: 55000, category: 'com-tam', img: 'menu/ct-7.jpg', description: 'Hai miếng sườn nướng cho người ăn khỏe' },
 
   // --- CƠM CHIÊN CÁC LOẠI ---
-  { id: 'cc-1', name: 'Cơm Chiên Dưa Bò', price: 45000, category: 'com-chien', description: 'Bắp bò xào dưa cải chua + Cơm chiên vàng hạt' },
-  { id: 'cc-2', name: 'Cơm Chiên Dương Châu', price: 40000, category: 'com-chien', description: 'Lạp xưởng, tôm, trứng, đậu Hà Lan, cà rốt' },
-  { id: 'cc-3', name: 'Cơm Chiên Hải Sản', price: 50000, category: 'com-chien', description: 'Tôm, mực tươi xào cùng cơm chiên' },
-  { id: 'cc-4', name: 'Cơm Chiên Gà Xé', price: 40000, category: 'com-chien', description: 'Gà xé phay + Cơm chiên tỏi' },
-  { id: 'cc-5', name: 'Cơm Chiên Xá Xíu', price: 40000, category: 'com-chien', description: 'Xá xíu thái lát + Cơm chiên trứng' },
-  { id: 'cc-6', name: 'Cơm Chiên Cá Mặn', price: 40000, category: 'com-chien', description: 'Cá mặn chiên giòn đậm vị' },
-  { id: 'cc-7', name: 'Cơm Chiên Trứng', price: 30000, category: 'com-chien', description: 'Cơm chiên trứng đơn giản, nhanh gọn' },
+  { id: 'cc-1', name: 'Cơm Chiên Dưa Bò', price: 45000, category: 'com-chien', img: 'menu/cc-1.jpg', description: 'Bắp bò xào dưa cải chua + Cơm chiên vàng hạt' },
+  { id: 'cc-2', name: 'Cơm Chiên Dương Châu', price: 40000, category: 'com-chien', img: 'menu/cc-2.jpg', description: 'Lạp xưởng, tôm, trứng, đậu Hà Lan, cà rốt' },
+  { id: 'cc-3', name: 'Cơm Chiên Hải Sản', price: 50000, category: 'com-chien', img: 'menu/cc-3.jpg', description: 'Tôm, mực tươi xào cùng cơm chiên' },
+  { id: 'cc-4', name: 'Cơm Chiên Gà Xé', price: 40000, category: 'com-chien', img: 'menu/cc-4.jpg', description: 'Gà xé phay + Cơm chiên tỏi' },
+  { id: 'cc-5', name: 'Cơm Chiên Xá Xíu', price: 40000, category: 'com-chien', img: 'menu/cc-5.jpg', description: 'Xá xíu thái lát + Cơm chiên trứng' },
+  { id: 'cc-6', name: 'Cơm Chiên Cá Mặn', price: 40000, category: 'com-chien', img: 'menu/cc-6.jpg', description: 'Cá mặn chiên giòn đậm vị' },
+  { id: 'cc-7', name: 'Cơm Chiên Trứng', price: 30000, category: 'com-chien', img: 'menu/cc-7.jpg', description: 'Cơm chiên trứng đơn giản, nhanh gọn' },
 
   // --- TOPPING PHỔ BIẾN ---
-  { id: 'tp-1', name: 'Sườn Nướng Thêm', price: 25000, category: 'topping', img: 'com_tam_suon.jpg' },
-  { id: 'tp-2', name: 'Bì Thêm', price: 7000, category: 'topping' },
-  { id: 'tp-3', name: 'Chả Trứng Thêm', price: 10000, category: 'topping' },
-  { id: 'tp-4', name: 'Trứng Ốp La Thêm', price: 5000, category: 'topping' },
-  { id: 'tp-5', name: 'Lạp Xưởng', price: 10000, category: 'topping' },
-  { id: 'tp-6', name: 'Dưa Cải Xào Bò Thêm', price: 20000, category: 'topping' },
-  { id: 'tp-7', name: 'Cơm Thêm', price: 5000, category: 'topping' },
+  { id: 'tp-1', name: 'Sườn Nướng Thêm', price: 25000, category: 'topping', img: 'menu/tp-1.jpg' },
+  { id: 'tp-2', name: 'Bì Thêm', price: 7000, category: 'topping', img: 'menu/tp-2.jpg' },
+  { id: 'tp-3', name: 'Chả Trứng Thêm', price: 10000, category: 'topping', img: 'menu/tp-3.jpg' },
+  { id: 'tp-4', name: 'Trứng Ốp La Thêm', price: 5000, category: 'topping', img: 'menu/tp-4.jpg' },
+  { id: 'tp-5', name: 'Lạp Xưởng', price: 10000, category: 'topping', img: 'menu/tp-5.jpg' },
+  { id: 'tp-6', name: 'Dưa Cải Xào Bò Thêm', price: 20000, category: 'topping', img: 'menu/tp-6.jpg' },
+  { id: 'tp-7', name: 'Cơm Thêm', price: 5000, category: 'topping', img: 'menu/tp-7.jpg' },
 ];
 
 export interface OrderLine {
