@@ -19,6 +19,7 @@ function tableFromUrl(): number | '' {
 
 export default function TableOrderPage() {
   const [activeCat, setActiveCat] = useState<Category | 'all'>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [cart, setCart] = useState<OrderLine[]>([]);
   const [tableNo, setTableNo] = useState<number | ''>(tableFromUrl);
   const [orderType, setOrderType] = useState<OrderType>('tai-quan');
@@ -131,24 +132,48 @@ export default function TableOrderPage() {
   // ---------- Màn hình gọi món ----------
   return (
     <div className="tor">
+      {/* Banner nhà hàng sang trọng */}
       <section className="tor-hero">
-        <img
-          className="tor-hero__img"
-          src={import.meta.env.BASE_URL + 'banner_gymer.png'}
-          alt="Cơm tấm sườn nướng Gymer"
-          onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-        />
+        <div className="tor-hero__badge-row">
+          <span className="tor-hero__badge">
+            ★ CƠM TẤM SƯỜN NƯỚNG THAN HOA
+          </span>
+          <span className="tor-hero__pill">
+            🟢 Đang mở cửa phục vụ
+          </span>
+          <span className="tor-hero__pill" style={{ color: '#fbbf24', borderColor: 'rgba(245, 158, 11, 0.4)', background: 'rgba(245, 158, 11, 0.15)' }}>
+            🥩 Suất 2 Sườn Cho Gymer (55K) · Sườn Bì Chả Trứng (50K)
+          </span>
+        </div>
+        <h1>🥩 TRẠM KHỞI NGHIỆP — CƠM TẤM SƯỜN NƯỚNG THAN HOA</h1>
+        <div className="tor-hero__info-row">
+          <span>📍 <strong>Cơ sở:</strong> Trạm Khởi Nghiệp Cơm Tấm</span>
+          <span>📞 <strong>Hotline/Zalo đặt cơm:</strong> <a href="tel:0931811872" style={{ color: '#fbbf24', textDecoration: 'none' }}>0931.811.872</a></span>
+          <span>🛵 <strong>Giao cơm hộp:</strong> Tận nơi cho văn phòng, xưởng, công ty</span>
+        </div>
       </section>
 
-      <div className="tor-chips" role="tablist" aria-label="Danh mục món">
-        <button className={activeCat === 'all' ? 'tor-chip active' : 'tor-chip'} onClick={() => setActiveCat('all')}>
-          🍽️ Tất cả
-        </button>
-        {CATEGORIES.map(c => (
-          <button key={c.id} className={activeCat === c.id ? 'tor-chip active' : 'tor-chip'} onClick={() => setActiveCat(c.id)}>
-            {c.emoji} {c.label}
-          </button>
-        ))}
+      {/* Thanh tìm kiếm & lọc danh mục sticky */}
+      <div className="tor-filter-bar">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'center' }}>
+          <input
+            className="input-field"
+            style={{ flex: '1 1 240px', padding: '0.6rem 1rem', fontSize: '0.9rem' }}
+            placeholder="🔍 Tìm món cơm tấm, cơm chiên (sườn bì chả, 2 sườn, dưa bò...)"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          <div className="tor-chips" role="tablist" aria-label="Danh mục món">
+            <button className={activeCat === 'all' ? 'tor-chip active' : 'tor-chip'} onClick={() => setActiveCat('all')}>
+              🍽️ Tất cả ({MENU.length})
+            </button>
+            {CATEGORIES.map(c => (
+              <button key={c.id} className={activeCat === c.id ? 'tor-chip active' : 'tor-chip'} onClick={() => setActiveCat(c.id)}>
+                {c.emoji} {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="order-layout">
@@ -157,7 +182,11 @@ export default function TableOrderPage() {
             <section key={c.id} className="glass-panel tor-section">
               <h2 style={{ color: c.color }}>{c.emoji} {c.label}</h2>
               <div className="menu-grid">
-                {MENU.filter(m => m.category === c.id).map(item => (
+                {MENU.filter(m => {
+                    if (m.category !== c.id) return false;
+                    if (!searchQuery.trim()) return true;
+                    return m.name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+                  }).map(item => (
                   <MenuItemCard key={item.id} item={item} onAdd={addItem} qtyInCart={qtyById[item.id] || 0} />
                 ))}
               </div>
@@ -196,9 +225,11 @@ export default function TableOrderPage() {
                       <div>{l.name}</div>
                       <small>{fmtVND(l.price)}</small>
                     </div>
-                    <button className="qty-btn" aria-label="Bớt" onClick={() => changeQty(l.id, -1)}>−</button>
-                    <span className="tor-line__qty">{l.qty}</span>
-                    <button className="qty-btn" aria-label="Thêm" onClick={() => changeQty(l.id, 1)}>+</button>
+                    <div className="qty-stepper">
+                      <button type="button" aria-label="Bớt" onClick={() => changeQty(l.id, -1)}>−</button>
+                      <span>{l.qty}</span>
+                      <button type="button" aria-label="Thêm" onClick={() => changeQty(l.id, 1)}>+</button>
+                    </div>
                   </div>
                   <input
                     className="input-field tor-line__note"
@@ -221,11 +252,16 @@ export default function TableOrderPage() {
               <textarea className="input-field" rows={2} placeholder="Ghi chú chung cho cả đơn..."
                 value={note} onChange={e => setNote(e.target.value)} />
 
-              <div className="tor-total"><span>Tổng tạm tính</span><strong>{fmtVND(total)}</strong></div>
-              <button className="btn-primary tor-submit" disabled={sending} onClick={submit}>
-                {sending ? 'Đang gửi...' : '🔔 Gửi đơn vào bếp'}
+              <div className="tor-total-row">
+                <span className="tor-total-label">Tổng cộng:</span>
+                <span className="tor-total-amount">{fmtVND(total)}</span>
+              </div>
+              <button className="tor-submit-btn" disabled={sending} onClick={submit}>
+                {sending ? 'Đang gửi...' : '🔔 GỬI ĐƠN VÀO BẾP NGAY'}
               </button>
-              <p className="tor-muted tor-hint">Thanh toán tại quầy sau khi dùng bữa.</p>
+              <p className="tor-muted" style={{ textAlign: 'center', fontSize: '0.75rem', marginTop: '8px' }}>
+                Thanh toán tại quầy hoặc quét mã VietQR sau khi dùng bữa.
+              </p>
             </>
           )}
         </aside>
